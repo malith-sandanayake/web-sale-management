@@ -21,6 +21,8 @@ import Customers from './app/customers/page';
 import Purchases from './app/expenses/purchases/page';
 import GeneralExpenses from './app/expenses/general/page';
 import Reports from './app/reports/page';
+import Profile from './app/profile/page';
+import ProductPerformance from './app/product-performance/page';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -107,6 +109,14 @@ export default function App() {
         <Route 
           path="/reports" 
           element={user ? <ProtectedLayout><Reports /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/profile" 
+          element={user ? <ProtectedLayout><Profile /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/product-performance" 
+          element={user ? <ProtectedLayout><ProductPerformance /></ProtectedLayout> : <Navigate to="/login" replace />} 
         />
 
         <Route path="*" element={<Navigate to="/" replace />} />

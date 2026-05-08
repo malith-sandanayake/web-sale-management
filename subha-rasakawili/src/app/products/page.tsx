@@ -1,25 +1,34 @@
-import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
+import { useState, useEffect, useRef } from 'react';
+import { collection, getDocs, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
 import { Plus, Search, Edit2, Check, X, Package } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
-import { Label } from '../../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { Badge } from '../../components/ui/badge';
-import { formatLKR } from '../../lib/utils';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { formatLKR } from '@/lib/utils';
 import { toast } from 'sonner';
-import { UnitType } from '../../types';
+import { UnitType } from '@/types';
 
 export default function Products() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isUpdateLoading, setIsUpdateLoading] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    unitType: UnitType.PIECE,
+    wholesalePrice: '',
+    retailPrice: ''
+  });
+  const editFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     fetchProducts();
@@ -56,6 +65,67 @@ export default function Products() {
       fetchProducts();
     } catch (e) {
       handleFirestoreError(e, OperationType.CREATE, 'products');
+    }
+  };
+
+  const openEditDialog = (product: any) => {
+    setEditingProduct(product);
+    setEditForm({
+      name: product.name || '',
+      unitType: product.unitType || UnitType.PIECE,
+      wholesalePrice: product.wholesalePrice?.toString() ?? '',
+      retailPrice: product.retailPrice?.toString() ?? ''
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleUpdateProduct = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingProduct) {
+      toast.error("No product selected for editing");
+      return;
+    }
+
+    if (!editForm.name.trim()) {
+      toast.error("Product name is required");
+      return;
+    }
+
+    const wholesalePrice = parseFloat(editForm.wholesalePrice);
+    const retailPrice = parseFloat(editForm.retailPrice);
+
+    if (isNaN(wholesalePrice) || isNaN(retailPrice)) {
+      toast.error("Please enter valid prices");
+      return;
+    }
+
+    setIsUpdateLoading(true);
+
+    try {
+      await updateDoc(doc(db, 'products', editingProduct.id), {
+        name: editForm.name.trim(),
+        unitType: editForm.unitType,
+        wholesalePrice: wholesalePrice,
+        retailPrice: retailPrice,
+        updatedAt: new Date().toISOString()
+      });
+
+      toast.success("Product updated successfully");
+      setIsEditOpen(false);
+      setEditingProduct(null);
+      setEditForm({
+        name: '',
+        unitType: UnitType.PIECE,
+        wholesalePrice: '',
+        retailPrice: ''
+      });
+      fetchProducts();
+    } catch (e) {
+      console.error('Update error:', e);
+      toast.error("Failed to update product");
+      handleFirestoreError(e, OperationType.UPDATE, 'products');
+    } finally {
+      setIsUpdateLoading(false);
     }
   };
 
@@ -126,6 +196,90 @@ export default function Products() {
             </form>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={isEditOpen} onOpenChange={(open) => {
+          setIsEditOpen(open);
+          if (!open) {
+            setEditingProduct(null);
+          }
+        }}>
+          <DialogContent>
+            <form ref={editFormRef} onSubmit={handleUpdateProduct}>
+              <DialogHeader>
+                <DialogTitle>Edit Product</DialogTitle>
+                <DialogDescription>Update the details for this product.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-name">Product Name</Label>
+                  <Input
+                    id="edit-name"
+                    name="name"
+                    required
+                    value={editForm.name}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-unitType">Unit Type</Label>
+                  <Select
+                    name="unitType"
+                    value={editForm.unitType}
+                    onValueChange={(value) => setEditForm((prev) => ({ ...prev, unitType: value as UnitType }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.values(UnitType).map((u) => (
+                        <SelectItem key={u} value={u}>{u}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-wholesalePrice">Wholesale Price (LKR)</Label>
+                    <Input
+                      id="edit-wholesalePrice"
+                      name="wholesalePrice"
+                      type="number"
+                      step="0.01"
+                      required
+                      value={editForm.wholesalePrice}
+                      onChange={(event) => setEditForm((prev) => ({ ...prev, wholesalePrice: event.target.value }))}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-retailPrice">Retail Price (LKR)</Label>
+                    <Input
+                      id="edit-retailPrice"
+                      name="retailPrice"
+                      type="number"
+                      step="0.01"
+                      required
+                      value={editForm.retailPrice}
+                      onChange={(event) => setEditForm((prev) => ({ ...prev, retailPrice: event.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => { setIsEditOpen(false); setEditingProduct(null); }}>
+                  Cancel
+                </Button>
+                <Button 
+                  type="button" 
+                  className="bg-slate-900" 
+                  disabled={isUpdateLoading}
+                  onClick={() => editFormRef.current?.requestSubmit()}
+                >
+                  {isUpdateLoading ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Card className="border-none shadow-sm overflow-hidden">
@@ -183,6 +337,9 @@ export default function Products() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(product)}>
+                        <Edit2 className="w-4 h-4 text-slate-600" />
+                      </Button>
                        <Button variant="ghost" size="icon" onClick={() => toggleStatus(product.id, product.isActive)}>
                         {product.isActive ? <X className="w-4 h-4 text-red-500" /> : <Check className="w-4 h-4 text-emerald-500" />}
                       </Button>

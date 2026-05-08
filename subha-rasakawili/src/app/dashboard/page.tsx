@@ -13,13 +13,12 @@ import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { 
   DollarSign, 
   TrendingUp, 
-  ShoppingBag, 
-  Users, 
+  Percent, 
   ArrowUpRight, 
   ArrowDownRight,
   Plus
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { formatLKR, cn } from '../../lib/utils';
@@ -48,38 +47,119 @@ export default function Dashboard() {
     retailCount: 0
   });
   const [recentSales, setRecentSales] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [pieData, setPieData] = useState<any[]>([]);
+  const [productPieData, setProductPieData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const parseDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === 'number' || typeof value === 'string') {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    if (typeof value?.toDate === 'function') {
+      return value.toDate();
+    }
+    return null;
+  };
 
   useEffect(() => {
     async function fetchData() {
       try {
         // Fetch Receipts
         const receiptsSnap = await getDocs(collection(db, 'receipts'));
-        const receiptsData = receiptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const receiptsData = receiptsSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter((receipt: any) => !receipt.isReversed);
         
         // Fetch Expenses
         const purchasesSnap = await getDocs(collection(db, 'expense_purchases'));
         const generalExpSnap = await getDocs(collection(db, 'expense_general'));
-        
+        const customersSnap = await getDocs(collection(db, 'customers'));
+
+        const customersMap = new Map(customersSnap.docs.map((d) => [d.id, d.data()]));
+        const productsSnap = await getDocs(collection(db, 'products'));
+        const productsMap = new Map(productsSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+
+        const productSalesMap = new Map();
+
         let income = 0;
         let wholesale = 0;
         let retail = 0;
-        
-        // This would normally be filtered by selected date range
+
+        const getMonthKey = (value: any) => {
+          const date = parseDate(value);
+          return date
+            ? `${date.getFullYear()}-${date.getMonth() + 1}`
+            : null;
+        };
+
+        const months = Array.from({ length: 6 }, (_, index) => {
+          const date = new Date();
+          date.setMonth(date.getMonth() - (5 - index));
+          return {
+            key: `${date.getFullYear()}-${date.getMonth() + 1}`,
+            name: date.toLocaleString('en-GB', { month: 'short' }),
+            income: 0,
+            expenses: 0
+          };
+        });
+
+        const monthMap = new Map(months.map((month) => [month.key, { ...month }]));
+
         receiptsData.forEach((r: any) => {
-          income += r.totalAmount || 0;
-          // We need to fetch customer type for counts
-          // In a real app, customerType might be stored on the receipt for historical accuracy
+          const amount = r.totalAmount || 0;
+          income += amount;
+
+          const customer = customersMap.get(r.customerId);
+          if (customer?.customerType === 'WHOLESALE') {
+            wholesale += 1;
+          } else if (customer?.customerType === 'RETAIL') {
+            retail += 1;
+          }
+
+          const monthKey = getMonthKey(r.createdAt || r.saleDate);
+          if (monthKey && monthMap.has(monthKey)) {
+            const monthRecord = monthMap.get(monthKey);
+            if (monthRecord) monthRecord.income += amount;
+          }
+
+          // Aggregate product sales
+          if (r.items && Array.isArray(r.items)) {
+            r.items.forEach((item: any) => {
+              const product = productsMap.get(item.productId);
+              const productName = (product as any)?.name || 'Unknown Product';
+              const currentVal = productSalesMap.get(productName) || 0;
+              productSalesMap.set(productName, currentVal + (item.subtotal || 0));
+            });
+          }
         });
 
         let materialCosts = 0;
-        purchasesSnap.forEach(d => {
-          materialCosts += d.data().totalAmount || 0;
+        purchasesSnap.forEach((d) => {
+          const data = d.data();
+          if (data.isReversed) return;
+          const amount = data.totalAmount || 0;
+          materialCosts += amount;
+          const monthKey = getMonthKey(data.createdAt || data.purchaseDate);
+          if (monthKey && monthMap.has(monthKey)) {
+            const monthRecord = monthMap.get(monthKey);
+            if (monthRecord) monthRecord.expenses += amount;
+          }
         });
 
         let generalCosts = 0;
-        generalExpSnap.forEach(d => {
-          generalCosts += d.data().amount || 0;
+        generalExpSnap.forEach((d) => {
+          const data = d.data();
+          const amount = data.amount || 0;
+          generalCosts += amount;
+          const monthKey = getMonthKey(data.createdAt || data.expenseDate);
+          if (monthKey && monthMap.has(monthKey)) {
+            const monthRecord = monthMap.get(monthKey);
+            if (monthRecord) monthRecord.expenses += amount;
+          }
         });
 
         const totalExp = materialCosts + generalCosts;
@@ -89,26 +169,42 @@ export default function Dashboard() {
           totalExpenses: totalExp,
           netProfit: income - totalExp,
           salesCount: receiptsData.length,
-          wholesaleCount: 0, // Placeholder
-          retailCount: 0    // Placeholder
+          wholesaleCount: wholesale,
+          retailCount: retail
         });
 
+        setChartData(Array.from(monthMap.values()));
+        setPieData([
+          { name: 'Wholesale', value: wholesale },
+          { name: 'Retail', value: retail }
+        ]);
+
+        const sortedProductSales = Array.from(productSalesMap.entries())
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5); // Top 5 products
+
+        setProductPieData(sortedProductSales);
+
         // Recent Sales
-        const q = query(collection(db, 'receipts'), orderBy('createdAt', 'desc'), limit(5));
+        const q = query(collection(db, 'receipts'), orderBy('createdAt', 'desc'), limit(10));
         const recentSnap = await getDocs(q);
-        const recentWithCustomers = await Promise.all(recentSnap.docs.map(async (d) => {
-          const data = d.data();
-          const customerSnap = await getDoc(doc(db, 'customers', data.customerId));
-          return {
-            id: d.id,
-            receiptNumber: data.receiptNumber,
-            totalAmount: data.totalAmount,
-            saleDate: data.saleDate,
-            customerName: customerSnap.exists() ? customerSnap.data().name : 'Unknown',
-            customerType: customerSnap.exists() ? customerSnap.data().customerType : 'N/A'
-          };
-        }));
-        setRecentSales(recentWithCustomers);
+        const recentWithCustomers = recentSnap.docs
+          .map((d) => {
+            const data = d.data();
+            if (data.isReversed) return null;
+            const customer = customersMap.get(data.customerId);
+            return {
+              id: d.id,
+              receiptNumber: data.receiptNumber,
+              totalAmount: data.totalAmount,
+              saleDate: data.saleDate,
+              customerName: customer?.name || 'Unknown',
+              customerType: customer?.customerType || 'N/A'
+            };
+          })
+          .filter(Boolean);
+        setRecentSales(recentWithCustomers.slice(0, 5));
 
       } catch (error) {
         handleFirestoreError(error, OperationType.LIST, 'dashboard');
@@ -118,20 +214,6 @@ export default function Dashboard() {
     }
     fetchData();
   }, []);
-
-  const chartData = [
-    { name: 'Jan', income: 4000, expenses: 2400 },
-    { name: 'Feb', income: 3000, expenses: 1398 },
-    { name: 'Mar', income: 2000, expenses: 9800 },
-    { name: 'Apr', income: 2780, expenses: 3908 },
-    { name: 'May', income: 1890, expenses: 4800 },
-    { name: 'Jun', income: 2390, expenses: 3800 },
-  ];
-
-  const pieData = [
-    { name: 'Wholesale', value: 400 },
-    { name: 'Retail', value: 300 },
-  ];
 
   const COLORS = ['#0f172a', '#64748b'];
 
@@ -185,11 +267,12 @@ export default function Dashboard() {
           color={stats.netProfit >= 0 ? "emerald" : "red"}
         />
         <StatCard 
-          title="Total Sales" 
-          value={stats.salesCount.toString()} 
-          icon={ShoppingBag} 
-          trend="up" 
-          trendValue="+4" 
+          title="Profit Margin" 
+          value={`${stats.totalIncome > 0 ? ((stats.netProfit / stats.totalIncome) * 100).toFixed(1) : '0.0'}%`} 
+          icon={Percent} 
+          trend={stats.totalIncome > 0 && stats.netProfit >= 0 ? "up" : "down"} 
+          trendValue={stats.totalIncome > 0 && stats.netProfit >= 0 ? "Healthy" : "Low"} 
+          color={stats.totalIncome > 0 && stats.netProfit >= 0 ? "emerald" : "red"}
         />
       </div>
 
@@ -216,33 +299,36 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3 border-none shadow-sm overflow-hidden">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold">Customer Distribution</CardTitle>
-            <CardDescription>Sales by customer type</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px] flex flex-col items-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+          <Card className="lg:col-span-3 border-none shadow-sm overflow-hidden">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold">Product Performance</CardTitle>
+              <CardDescription>Monthly performance by product</CardDescription>
+            </CardHeader>
+            <CardContent className="h-[300px] flex flex-col items-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={productPieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {productPieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+            <CardFooter className="flex justify-end p-4">
+              <Button variant="link" size="sm" render={<Link to="/product-performance">View Details</Link>} />
+            </CardFooter>
+          </Card>
       </div>
 
       <Card className="border-none shadow-sm overflow-hidden">
@@ -279,7 +365,12 @@ export default function Dashboard() {
                   </TableCell>
                   <TableCell className="font-medium">{formatLKR(sale.totalAmount)}</TableCell>
                   <TableCell className="text-slate-500">
-                    {new Date(sale.saleDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                    {(() => {
+                      const saleDate = parseDate(sale.saleDate);
+                      return saleDate
+                        ? saleDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                        : '—';
+                    })()}
                   </TableCell>
                 </TableRow>
               ))}

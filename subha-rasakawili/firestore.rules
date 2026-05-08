@@ -9,7 +9,8 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email == 'malithsandanayake@gmail.com'
+        request.auth.token.email == 'malithsandanayake@gmail.com' ||
+        request.auth.token.email == 'ruwan2775@gmail.com'
       );
     }
 
@@ -32,62 +33,52 @@ service cloud.firestore {
 
     // Products
     match /products/{productId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Ingredients
     match /ingredients/{ingredientId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Product Recipes
     match /product_recipes/{recipeId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Customers
     match /customers/{customerId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Receipts
     match /receipts/{receiptId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Receipt Items
     match /receipt_items/{itemId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Payments
     match /payments/{paymentId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Expense Purchases
     match /expense_purchases/{purchaseId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Expense General
     match /expense_general/{expenseId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     // Admins
     match /admins/{adminId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
   }
 }

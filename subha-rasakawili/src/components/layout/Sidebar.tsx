@@ -6,6 +6,7 @@ import {
   Leaf, 
   ClipboardList, 
   Users, 
+  User,
   Receipt, 
   BarChart3,
   Settings,
@@ -26,6 +27,7 @@ const navItems = [
   { icon: Receipt, label: "Expense Purchases", path: "/expenses/purchases" },
   { icon: Settings, label: "General Expenses", path: "/expenses/general" },
   { icon: BarChart3, label: "Reports", path: "/reports" },
+  { icon: User, label: "Profile", path: "/profile" },
 ];
 
 export default function Sidebar() {
@@ -37,7 +39,7 @@ export default function Sidebar() {
     <aside className="w-64 bg-slate-900 text-slate-100 flex flex-col h-screen sticky top-0 shrink-0">
       <div className="p-6">
         <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
-          SweetBiz Manager
+          Subha Rasakawili
         </h1>
         <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-wider">
           Traditional Food
