@@ -13,13 +13,12 @@ import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { 
   DollarSign, 
   TrendingUp, 
-  ShoppingBag, 
-  Users, 
+  Percent, 
   ArrowUpRight, 
   ArrowDownRight,
   Plus
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { formatLKR, cn } from '../../lib/utils';
@@ -50,6 +49,7 @@ export default function Dashboard() {
   const [recentSales, setRecentSales] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [pieData, setPieData] = useState<any[]>([]);
+  const [productPieData, setProductPieData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const parseDate = (value: any) => {
@@ -80,6 +80,10 @@ export default function Dashboard() {
         const customersSnap = await getDocs(collection(db, 'customers'));
 
         const customersMap = new Map(customersSnap.docs.map((d) => [d.id, d.data()]));
+        const productsSnap = await getDocs(collection(db, 'products'));
+        const productsMap = new Map(productsSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+
+        const productSalesMap = new Map();
 
         let income = 0;
         let wholesale = 0;
@@ -120,6 +124,16 @@ export default function Dashboard() {
           if (monthKey && monthMap.has(monthKey)) {
             const monthRecord = monthMap.get(monthKey);
             if (monthRecord) monthRecord.income += amount;
+          }
+
+          // Aggregate product sales
+          if (r.items && Array.isArray(r.items)) {
+            r.items.forEach((item: any) => {
+              const product = productsMap.get(item.productId);
+              const productName = (product as any)?.name || 'Unknown Product';
+              const currentVal = productSalesMap.get(productName) || 0;
+              productSalesMap.set(productName, currentVal + (item.subtotal || 0));
+            });
           }
         });
 
@@ -164,6 +178,13 @@ export default function Dashboard() {
           { name: 'Wholesale', value: wholesale },
           { name: 'Retail', value: retail }
         ]);
+
+        const sortedProductSales = Array.from(productSalesMap.entries())
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5); // Top 5 products
+
+        setProductPieData(sortedProductSales);
 
         // Recent Sales
         const q = query(collection(db, 'receipts'), orderBy('createdAt', 'desc'), limit(10));
@@ -246,11 +267,12 @@ export default function Dashboard() {
           color={stats.netProfit >= 0 ? "emerald" : "red"}
         />
         <StatCard 
-          title="Total Sales" 
-          value={stats.salesCount.toString()} 
-          icon={ShoppingBag} 
-          trend="up" 
-          trendValue="+4" 
+          title="Profit Margin" 
+          value={`${stats.totalIncome > 0 ? ((stats.netProfit / stats.totalIncome) * 100).toFixed(1) : '0.0'}%`} 
+          icon={Percent} 
+          trend={stats.totalIncome > 0 && stats.netProfit >= 0 ? "up" : "down"} 
+          trendValue={stats.totalIncome > 0 && stats.netProfit >= 0 ? "Healthy" : "Low"} 
+          color={stats.totalIncome > 0 && stats.netProfit >= 0 ? "emerald" : "red"}
         />
       </div>
 
@@ -277,33 +299,36 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3 border-none shadow-sm overflow-hidden">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold">Customer Distribution</CardTitle>
-            <CardDescription>Sales by customer type</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px] flex flex-col items-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+          <Card className="lg:col-span-3 border-none shadow-sm overflow-hidden">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold">Product Performance</CardTitle>
+              <CardDescription>Monthly performance by product</CardDescription>
+            </CardHeader>
+            <CardContent className="h-[300px] flex flex-col items-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={productPieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {productPieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+            <CardFooter className="flex justify-end p-4">
+              <Button variant="link" size="sm" render={<Link to="/product-performance">View Details</Link>} />
+            </CardFooter>
+          </Card>
       </div>
 
       <Card className="border-none shadow-sm overflow-hidden">

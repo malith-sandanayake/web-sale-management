@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
 import { Plus, Search, Edit2, Check, X, Package } from 'lucide-react';
@@ -28,6 +28,7 @@ export default function Products() {
     wholesalePrice: '',
     retailPrice: ''
   });
+  const editFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     fetchProducts();
@@ -80,24 +81,48 @@ export default function Products() {
 
   const handleUpdateProduct = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!editingProduct) return;
+    if (!editingProduct) {
+      toast.error("No product selected for editing");
+      return;
+    }
+
+    if (!editForm.name.trim()) {
+      toast.error("Product name is required");
+      return;
+    }
+
+    const wholesalePrice = parseFloat(editForm.wholesalePrice);
+    const retailPrice = parseFloat(editForm.retailPrice);
+
+    if (isNaN(wholesalePrice) || isNaN(retailPrice)) {
+      toast.error("Please enter valid prices");
+      return;
+    }
 
     setIsUpdateLoading(true);
 
     try {
       await updateDoc(doc(db, 'products', editingProduct.id), {
-        name: editForm.name,
+        name: editForm.name.trim(),
         unitType: editForm.unitType,
-        wholesalePrice: parseFloat(editForm.wholesalePrice),
-        retailPrice: parseFloat(editForm.retailPrice),
+        wholesalePrice: wholesalePrice,
+        retailPrice: retailPrice,
         updatedAt: new Date().toISOString()
       });
 
       toast.success("Product updated successfully");
       setIsEditOpen(false);
       setEditingProduct(null);
+      setEditForm({
+        name: '',
+        unitType: UnitType.PIECE,
+        wholesalePrice: '',
+        retailPrice: ''
+      });
       fetchProducts();
     } catch (e) {
+      console.error('Update error:', e);
+      toast.error("Failed to update product");
       handleFirestoreError(e, OperationType.UPDATE, 'products');
     } finally {
       setIsUpdateLoading(false);
@@ -179,7 +204,7 @@ export default function Products() {
           }
         }}>
           <DialogContent>
-            <form onSubmit={handleUpdateProduct}>
+            <form ref={editFormRef} onSubmit={handleUpdateProduct}>
               <DialogHeader>
                 <DialogTitle>Edit Product</DialogTitle>
                 <DialogDescription>Update the details for this product.</DialogDescription>
@@ -243,7 +268,12 @@ export default function Products() {
                 <Button type="button" variant="outline" onClick={() => { setIsEditOpen(false); setEditingProduct(null); }}>
                   Cancel
                 </Button>
-                <Button type="submit" className="bg-slate-900" disabled={isUpdateLoading}>
+                <Button 
+                  type="button" 
+                  className="bg-slate-900" 
+                  disabled={isUpdateLoading}
+                  onClick={() => editFormRef.current?.requestSubmit()}
+                >
                   {isUpdateLoading ? 'Saving...' : 'Save Changes'}
                 </Button>
               </DialogFooter>
