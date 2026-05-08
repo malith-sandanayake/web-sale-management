@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, orderBy, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
-import { Search, Filter, Receipt as ReceiptIcon, Eye, Download, Calendar } from 'lucide-react';
+import { Search, Filter, Receipt as ReceiptIcon, Eye, Download, Calendar, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -10,6 +10,7 @@ import { Badge } from '../../components/ui/badge';
 import { formatLKR } from '../../lib/utils';
 import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog';
+import { toast } from 'sonner';
 
 export default function SalesList() {
   const [sales, setSales] = useState<any[]>([]);
@@ -42,6 +43,22 @@ export default function SalesList() {
       setLoading(false);
     }
   }
+
+  const reverseSale = async (saleId: string) => {
+    const confirmed = window.confirm('Reverse this sale? This will mark it as reversed and remove it from income totals.');
+    if (!confirmed) return;
+
+    try {
+      await updateDoc(doc(db, 'receipts', saleId), {
+        isReversed: true,
+        reversedAt: new Date().toISOString()
+      });
+      toast.success('Sale reversed successfully');
+      fetchSales();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, 'receipts');
+    }
+  };
 
   const filtered = sales.filter(s => 
     s.receiptNumber.toLowerCase().includes(search.toLowerCase()) || 
@@ -120,9 +137,13 @@ export default function SalesList() {
                       <Button variant="ghost" size="icon" onClick={() => setSelectedSale(sale)}>
                         <Eye className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon">
-                        <Download className="w-4 h-4" />
-                      </Button>
+                      {!sale.isReversed ? (
+                        <Button variant="ghost" size="icon" onClick={() => reverseSale(sale.id)}>
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
+                      ) : (
+                        <Badge variant="outline" className="uppercase text-xs px-2 py-1">Reversed</Badge>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

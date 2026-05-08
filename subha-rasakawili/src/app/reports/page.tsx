@@ -26,10 +26,16 @@ export default function Reports() {
       const generalExpSnap = await getDocs(collection(db, 'expense_general'));
 
       let income = 0;
-      receiptsSnap.forEach(d => income += d.data().totalAmount || 0);
+      receiptsSnap.forEach(d => {
+        const data = d.data();
+        if (!data.isReversed) income += data.totalAmount || 0;
+      });
 
       let materialCosts = 0;
-      purchasesSnap.forEach(d => materialCosts += d.data().totalAmount || 0);
+      purchasesSnap.forEach(d => {
+        const data = d.data();
+        if (!data.isReversed) materialCosts += data.totalAmount || 0;
+      });
 
       let generalCosts = 0;
       const genericExpByCategory: any = {};

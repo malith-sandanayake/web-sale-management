@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, query, orderBy, updateDoc, doc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../../lib/firebase';
-import { Plus, ShoppingCart, Calendar, Search } from 'lucide-react';
+import { Plus, ShoppingCart, Calendar, Search, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
@@ -79,6 +79,22 @@ export default function Purchases() {
     }
   };
 
+  const reversePurchase = async (purchaseId: string) => {
+    const confirmed = window.confirm('Reverse this purchase? This will mark it as reversed and exclude it from total purchase reports.');
+    if (!confirmed) return;
+
+    try {
+      await updateDoc(doc(db, 'expense_purchases', purchaseId), {
+        isReversed: true,
+        reversedAt: new Date().toISOString()
+      });
+      toast.success('Purchase reversed successfully');
+      fetchData();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, 'expense_purchases');
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -142,13 +158,14 @@ export default function Purchases() {
                 <TableHead className="font-semibold capitalize text-xs">Quantity</TableHead>
                 <TableHead className="font-semibold capitalize text-xs">Unit Rate</TableHead>
                 <TableHead className="font-semibold capitalize text-xs">Total Amount</TableHead>
+                <TableHead className="text-right font-semibold capitalize text-xs">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                  [1,2,3].map(i => (
                   <TableRow key={i}>
-                    <TableCell colSpan={5} className="px-6 py-4"><div className="h-8 animate-pulse bg-slate-100 rounded" /></TableCell>
+                    <TableCell colSpan={6} className="px-6 py-4"><div className="h-8 animate-pulse bg-slate-100 rounded" /></TableCell>
                   </TableRow>
                 ))
               ) : purchases.map((p) => (
@@ -160,11 +177,20 @@ export default function Purchases() {
                   <TableCell>{p.quantity}</TableCell>
                   <TableCell className="text-slate-600 font-medium">{formatLKR(p.unitRate)}</TableCell>
                   <TableCell className="font-black text-slate-900">{formatLKR(p.totalAmount)}</TableCell>
+                  <TableCell className="text-right">
+                    {p.isReversed ? (
+                      <span className="inline-flex rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Reversed</span>
+                    ) : (
+                      <Button variant="ghost" size="icon" onClick={() => reversePurchase(p.id)}>
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {!loading && purchases.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-16 text-slate-400">No purchases recorded yet.</TableCell>
+                  <TableCell colSpan={6} className="text-center py-16 text-slate-400">No purchases recorded yet.</TableCell>
                 </TableRow>
               )}
             </TableBody>

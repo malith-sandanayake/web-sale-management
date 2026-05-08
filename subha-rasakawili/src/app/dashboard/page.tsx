@@ -48,38 +48,104 @@ export default function Dashboard() {
     retailCount: 0
   });
   const [recentSales, setRecentSales] = useState<any[]>([]);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [pieData, setPieData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const parseDate = (value: any) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === 'number' || typeof value === 'string') {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    if (typeof value?.toDate === 'function') {
+      return value.toDate();
+    }
+    return null;
+  };
 
   useEffect(() => {
     async function fetchData() {
       try {
         // Fetch Receipts
         const receiptsSnap = await getDocs(collection(db, 'receipts'));
-        const receiptsData = receiptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const receiptsData = receiptsSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter((receipt: any) => !receipt.isReversed);
         
         // Fetch Expenses
         const purchasesSnap = await getDocs(collection(db, 'expense_purchases'));
         const generalExpSnap = await getDocs(collection(db, 'expense_general'));
-        
+        const customersSnap = await getDocs(collection(db, 'customers'));
+
+        const customersMap = new Map(customersSnap.docs.map((d) => [d.id, d.data()]));
+
         let income = 0;
         let wholesale = 0;
         let retail = 0;
-        
-        // This would normally be filtered by selected date range
+
+        const getMonthKey = (value: any) => {
+          const date = parseDate(value);
+          return date
+            ? `${date.getFullYear()}-${date.getMonth() + 1}`
+            : null;
+        };
+
+        const months = Array.from({ length: 6 }, (_, index) => {
+          const date = new Date();
+          date.setMonth(date.getMonth() - (5 - index));
+          return {
+            key: `${date.getFullYear()}-${date.getMonth() + 1}`,
+            name: date.toLocaleString('en-GB', { month: 'short' }),
+            income: 0,
+            expenses: 0
+          };
+        });
+
+        const monthMap = new Map(months.map((month) => [month.key, { ...month }]));
+
         receiptsData.forEach((r: any) => {
-          income += r.totalAmount || 0;
-          // We need to fetch customer type for counts
-          // In a real app, customerType might be stored on the receipt for historical accuracy
+          const amount = r.totalAmount || 0;
+          income += amount;
+
+          const customer = customersMap.get(r.customerId);
+          if (customer?.customerType === 'WHOLESALE') {
+            wholesale += 1;
+          } else if (customer?.customerType === 'RETAIL') {
+            retail += 1;
+          }
+
+          const monthKey = getMonthKey(r.createdAt || r.saleDate);
+          if (monthKey && monthMap.has(monthKey)) {
+            const monthRecord = monthMap.get(monthKey);
+            if (monthRecord) monthRecord.income += amount;
+          }
         });
 
         let materialCosts = 0;
-        purchasesSnap.forEach(d => {
-          materialCosts += d.data().totalAmount || 0;
+        purchasesSnap.forEach((d) => {
+          const data = d.data();
+          if (data.isReversed) return;
+          const amount = data.totalAmount || 0;
+          materialCosts += amount;
+          const monthKey = getMonthKey(data.createdAt || data.purchaseDate);
+          if (monthKey && monthMap.has(monthKey)) {
+            const monthRecord = monthMap.get(monthKey);
+            if (monthRecord) monthRecord.expenses += amount;
+          }
         });
 
         let generalCosts = 0;
-        generalExpSnap.forEach(d => {
-          generalCosts += d.data().amount || 0;
+        generalExpSnap.forEach((d) => {
+          const data = d.data();
+          const amount = data.amount || 0;
+          generalCosts += amount;
+          const monthKey = getMonthKey(data.createdAt || data.expenseDate);
+          if (monthKey && monthMap.has(monthKey)) {
+            const monthRecord = monthMap.get(monthKey);
+            if (monthRecord) monthRecord.expenses += amount;
+          }
         });
 
         const totalExp = materialCosts + generalCosts;
@@ -89,26 +155,35 @@ export default function Dashboard() {
           totalExpenses: totalExp,
           netProfit: income - totalExp,
           salesCount: receiptsData.length,
-          wholesaleCount: 0, // Placeholder
-          retailCount: 0    // Placeholder
+          wholesaleCount: wholesale,
+          retailCount: retail
         });
 
+        setChartData(Array.from(monthMap.values()));
+        setPieData([
+          { name: 'Wholesale', value: wholesale },
+          { name: 'Retail', value: retail }
+        ]);
+
         // Recent Sales
-        const q = query(collection(db, 'receipts'), orderBy('createdAt', 'desc'), limit(5));
+        const q = query(collection(db, 'receipts'), orderBy('createdAt', 'desc'), limit(10));
         const recentSnap = await getDocs(q);
-        const recentWithCustomers = await Promise.all(recentSnap.docs.map(async (d) => {
-          const data = d.data();
-          const customerSnap = await getDoc(doc(db, 'customers', data.customerId));
-          return {
-            id: d.id,
-            receiptNumber: data.receiptNumber,
-            totalAmount: data.totalAmount,
-            saleDate: data.saleDate,
-            customerName: customerSnap.exists() ? customerSnap.data().name : 'Unknown',
-            customerType: customerSnap.exists() ? customerSnap.data().customerType : 'N/A'
-          };
-        }));
-        setRecentSales(recentWithCustomers);
+        const recentWithCustomers = recentSnap.docs
+          .map((d) => {
+            const data = d.data();
+            if (data.isReversed) return null;
+            const customer = customersMap.get(data.customerId);
+            return {
+              id: d.id,
+              receiptNumber: data.receiptNumber,
+              totalAmount: data.totalAmount,
+              saleDate: data.saleDate,
+              customerName: customer?.name || 'Unknown',
+              customerType: customer?.customerType || 'N/A'
+            };
+          })
+          .filter(Boolean);
+        setRecentSales(recentWithCustomers.slice(0, 5));
 
       } catch (error) {
         handleFirestoreError(error, OperationType.LIST, 'dashboard');
@@ -118,20 +193,6 @@ export default function Dashboard() {
     }
     fetchData();
   }, []);
-
-  const chartData = [
-    { name: 'Jan', income: 4000, expenses: 2400 },
-    { name: 'Feb', income: 3000, expenses: 1398 },
-    { name: 'Mar', income: 2000, expenses: 9800 },
-    { name: 'Apr', income: 2780, expenses: 3908 },
-    { name: 'May', income: 1890, expenses: 4800 },
-    { name: 'Jun', income: 2390, expenses: 3800 },
-  ];
-
-  const pieData = [
-    { name: 'Wholesale', value: 400 },
-    { name: 'Retail', value: 300 },
-  ];
 
   const COLORS = ['#0f172a', '#64748b'];
 
@@ -279,7 +340,12 @@ export default function Dashboard() {
                   </TableCell>
                   <TableCell className="font-medium">{formatLKR(sale.totalAmount)}</TableCell>
                   <TableCell className="text-slate-500">
-                    {new Date(sale.saleDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                    {(() => {
+                      const saleDate = parseDate(sale.saleDate);
+                      return saleDate
+                        ? saleDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                        : '—';
+                    })()}
                   </TableCell>
                 </TableRow>
               ))}

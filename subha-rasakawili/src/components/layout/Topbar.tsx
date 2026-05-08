@@ -8,7 +8,7 @@ export default function Topbar() {
     <header className="h-16 border-b bg-white flex items-center justify-between px-8 sticky top-0 z-10">
       <div className="flex items-center gap-2">
         <h2 className="font-semibold text-slate-800">
-          {window.location.pathname === '/' ? 'Overview' : 
+          {window.location.pathname === '/' ? 'Subha Rasakawili' : 
            window.location.pathname.substring(1).charAt(0).toUpperCase() + window.location.pathname.slice(2).replace('/', ' / ')}
         </h2>
       </div>
