@@ -1,0 +1,147 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Food product manufactured by the business",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "unitType": { "type": "string", "enum": ["PIECE", "KG", "G", "PACKET"] },
+        "wholesalePrice": { "type": "number" },
+        "retailPrice": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "unitType", "wholesalePrice", "retailPrice", "isActive"]
+    },
+    "Ingredient": {
+      "title": "Ingredient",
+      "description": "Raw material used in products",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "unit": { "type": "string" },
+        "currentUnitCost": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "unit", "currentUnitCost", "isActive"]
+    },
+    "ProductRecipe": {
+      "title": "Product Recipe",
+      "description": "Link between product and ingredient with quantity",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "ingredientId": { "type": "string" },
+        "quantityPerUnit": { "type": "number" },
+        "notes": { "type": "string" }
+      },
+      "required": ["productId", "ingredientId", "quantityPerUnit"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Buyer of products",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "customerType": { "type": "string", "enum": ["WHOLESALE", "RETAIL"] },
+        "phone": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "customerType"]
+    },
+    "Receipt": {
+      "title": "Receipt",
+      "description": "Record of a sale",
+      "type": "object",
+      "properties": {
+        "receiptNumber": { "type": "string" },
+        "customerId": { "type": "string" },
+        "saleDate": { "type": "string", "format": "date-time" },
+        "totalAmount": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["receiptNumber", "customerId", "saleDate", "totalAmount"]
+    },
+    "ReceiptItem": {
+      "title": "Receipt Item",
+      "description": "Individual product in a receipt",
+      "type": "object",
+      "properties": {
+        "receiptId": { "type": "string" },
+        "productId": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unitType": { "type": "string" },
+        "unitPrice": { "type": "number" },
+        "subtotal": { "type": "number" }
+      },
+      "required": ["receiptId", "productId", "quantity", "unitPrice", "subtotal"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment record for a receipt",
+      "type": "object",
+      "properties": {
+        "invoiceNumber": { "type": "string" },
+        "receiptId": { "type": "string" },
+        "paymentType": { "type": "string", "enum": ["CASH"] },
+        "amount": { "type": "number" },
+        "paymentDate": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["invoiceNumber", "receiptId", "paymentType", "amount"]
+    },
+    "ExpensePurchase": {
+      "title": "Expense Purchase",
+      "description": "Purchase of raw materials",
+      "type": "object",
+      "properties": {
+        "ingredientId": { "type": "string" },
+        "purchaseDate": { "type": "string", "format": "date-time" },
+        "quantity": { "type": "number" },
+        "unitRate": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "supplier": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["ingredientId", "purchaseDate", "quantity", "unitRate", "totalAmount"]
+    },
+    "ExpenseGeneral": {
+      "title": "Expense General",
+      "description": "General business expense",
+      "type": "object",
+      "properties": {
+        "expenseDate": { "type": "string", "format": "date-time" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "notes": { "type": "string" }
+      },
+      "required": ["expenseDate", "category", "amount"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Admin user record for authorization",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "products": { "schema": "Product", "description": "Collection of products" },
+    "ingredients": { "schema": "Ingredient", "description": "Collection of ingredients" },
+    "product_recipes": { "schema": "ProductRecipe", "description": "Collection of recipe mappings" },
+    "customers": { "schema": "Customer", "description": "Collection of customers" },
+    "receipts": { "schema": "Receipt", "description": "Collection of receipts" },
+    "receipt_items": { "schema": "ReceiptItem", "description": "Collection of receipt items" },
+    "payments": { "schema": "Payment", "description": "Collection of payments" },
+    "expense_purchases": { "schema": "ExpensePurchase", "description": "Collection of material purchases" },
+    "expense_general": { "schema": "ExpenseGeneral", "description": "Collection of general expenses" },
+    "admins": { "schema": "Admin", "description": "Collection of authorized admin emails" }
+  }
+}

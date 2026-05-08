@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'malithsandanayake@gmail.com'
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Products
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Ingredients
+    match /ingredients/{ingredientId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Product Recipes
+    match /product_recipes/{recipeId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Customers
+    match /customers/{customerId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Receipts
+    match /receipts/{receiptId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Receipt Items
+    match /receipt_items/{itemId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Payments
+    match /payments/{paymentId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Expense Purchases
+    match /expense_purchases/{purchaseId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Expense General
+    match /expense_general/{expenseId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Admins
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
