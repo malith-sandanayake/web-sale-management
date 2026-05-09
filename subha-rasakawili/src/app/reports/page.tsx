@@ -158,7 +158,7 @@ export default function Reports() {
                   <TableCell className="text-right font-medium text-red-500">({formatLKR(reportData.totalGeneralExpense)})</TableCell>
                 </TableRow>
                 <TableRow className="hover:bg-transparent border-t-2 border-slate-900 font-black">
-                  <TableCell className="text-slate-900">Final Outcome</TableCell>
+                  <TableCell className="text-slate-900">Net Income</TableCell>
                   <TableCell className={cn("text-right", reportData.netProfit >= 0 ? "text-emerald-600" : "text-red-600")}>
                     {formatLKR(reportData.netProfit)}
                   </TableCell>

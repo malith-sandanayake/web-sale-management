@@ -42,7 +42,7 @@ export default function Sidebar() {
           Subha Rasakawili
         </h1>
         <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-wider">
-          Traditional Food
+          The Taste of Tradition - For your Family
         </p>
       </div>
 

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
-import { Plus, Search, User, Phone, MapPin } from 'lucide-react';
+import { Plus, Search, User, Phone, MapPin, Edit2, Trash } from 'lucide-react';
+import { useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -18,6 +19,11 @@ export default function Customers() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isUpdateLoading, setIsUpdateLoading] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', customerType: CustomerType.RETAIL, phone: '' });
+  const editFormRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     fetchCustomers();
@@ -51,6 +57,51 @@ export default function Customers() {
       fetchCustomers();
     } catch (e) {
       handleFirestoreError(e, OperationType.CREATE, 'customers');
+    }
+  };
+
+  const openEditDialog = (customer: any) => {
+    setEditingCustomer(customer);
+    setEditForm({
+      name: customer.name || '',
+      customerType: customer.customerType || CustomerType.RETAIL,
+      phone: customer.phone || ''
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleUpdateCustomer = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingCustomer) return toast.error('No customer selected');
+    if (!editForm.name.trim()) return toast.error('Customer name is required');
+    setIsUpdateLoading(true);
+    try {
+      await updateDoc(doc(db, 'customers', editingCustomer.id), {
+        name: editForm.name.trim(),
+        customerType: editForm.customerType,
+        phone: editForm.phone,
+        updatedAt: new Date().toISOString()
+      });
+      toast.success('Customer updated successfully');
+      setIsEditOpen(false);
+      setEditingCustomer(null);
+      fetchCustomers();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, 'customers');
+    } finally {
+      setIsUpdateLoading(false);
+    }
+  };
+
+  const deleteCustomer = async (id: string) => {
+    const ok = window.confirm('Delete this customer? This action cannot be undone.');
+    if (!ok) return;
+    try {
+      await deleteDoc(doc(db, 'customers', id));
+      toast.success('Customer deleted');
+      fetchCustomers();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, 'customers');
     }
   };
 
@@ -101,6 +152,48 @@ export default function Customers() {
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
                 <Button type="submit" className="bg-slate-900">Save Customer</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={isEditOpen} onOpenChange={(open) => {
+          setIsEditOpen(open);
+          if (!open) setEditingCustomer(null);
+        }}>
+          <DialogContent>
+            <form ref={editFormRef} onSubmit={handleUpdateCustomer}>
+              <DialogHeader>
+                <DialogTitle>Edit Customer</DialogTitle>
+                <DialogDescription>Update the details for this customer.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-name">Full Name</Label>
+                  <Input id="edit-name" name="name" required value={editForm.name} onChange={(e) => setEditForm(prev => ({...prev, name: e.target.value}))} />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-customerType">Customer Type</Label>
+                  <Select name="customerType" value={editForm.customerType} onValueChange={(val) => setEditForm(prev => ({...prev, customerType: val}))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.values(CustomerType).map(t => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-phone">Phone Number</Label>
+                  <Input id="edit-phone" name="phone" value={editForm.phone} onChange={(e) => setEditForm(prev => ({...prev, phone: e.target.value}))} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => { setIsEditOpen(false); setEditingCustomer(null); }}>Cancel</Button>
+                <Button type="button" className="bg-slate-900" disabled={isUpdateLoading} onClick={() => editFormRef.current?.requestSubmit()}>
+                  {isUpdateLoading ? 'Saving...' : 'Save Changes'}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -162,9 +255,14 @@ export default function Customers() {
                     {new Date(customer.createdAt).toLocaleDateString('en-GB')}
                   </TableCell>
                   <TableCell className="text-right pr-6">
-                    <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                      Manage
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(customer)} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => deleteCustomer(customer.id)} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Trash className="w-4 h-4 text-red-500" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

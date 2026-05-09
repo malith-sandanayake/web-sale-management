@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
-import { Plus, Search, Edit2, Check, X, Package } from 'lucide-react';
+import { Plus, Search, Edit2, Check, X, Package, Trash } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -136,6 +136,18 @@ export default function Products() {
       fetchProducts();
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, 'products');
+    }
+  };
+
+  const deleteProduct = async (id: string) => {
+    const ok = window.confirm('Delete this product? This action cannot be undone.');
+    if (!ok) return;
+    try {
+      await deleteDoc(doc(db, 'products', id));
+      toast.success('Product deleted');
+      fetchProducts();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, 'products');
     }
   };
 
@@ -339,6 +351,9 @@ export default function Products() {
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" onClick={() => openEditDialog(product)}>
                         <Edit2 className="w-4 h-4 text-slate-600" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => deleteProduct(product.id)}>
+                        <Trash className="w-4 h-4 text-red-500" />
                       </Button>
                        <Button variant="ghost" size="icon" onClick={() => toggleStatus(product.id, product.isActive)}>
                         {product.isActive ? <X className="w-4 h-4 text-red-500" /> : <Check className="w-4 h-4 text-emerald-500" />}
