@@ -23,6 +23,7 @@ import { Button } from '../../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { formatLKR, cn } from '../../lib/utils';
 import { Link } from 'react-router-dom';
+import { CHART_COLORS } from '../../lib/chartColors';
 import { 
   BarChart, 
   Bar, 
@@ -78,12 +79,14 @@ export default function Dashboard() {
         const purchasesSnap = await getDocs(collection(db, 'expense_purchases'));
         const generalExpSnap = await getDocs(collection(db, 'expense_general'));
         const customersSnap = await getDocs(collection(db, 'customers'));
+        const receiptItemsSnap = await getDocs(collection(db, 'receipt_items'));
 
         const customersMap = new Map(customersSnap.docs.map((d) => [d.id, d.data()]));
         const productsSnap = await getDocs(collection(db, 'products'));
         const productsMap = new Map(productsSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
 
         const productSalesMap = new Map();
+        const allTimeProductSalesMap = new Map();
 
         let income = 0;
         let wholesale = 0;
@@ -126,15 +129,27 @@ export default function Dashboard() {
             if (monthRecord) monthRecord.income += amount;
           }
 
-          // Aggregate product sales
-          if (r.items && Array.isArray(r.items)) {
-            r.items.forEach((item: any) => {
-              const product = productsMap.get(item.productId);
-              const productName = (product as any)?.name || 'Unknown Product';
-              const currentVal = productSalesMap.get(productName) || 0;
-              productSalesMap.set(productName, currentVal + (item.subtotal || 0));
-            });
-          }
+        });
+
+        const currentMonth = new Date().getMonth();
+        const currentYear = new Date().getFullYear();
+
+        const receiptMonthMap = new Map<string, string>();
+        receiptsData.forEach((receipt: any) => {
+          const date = parseDate(receipt.createdAt || receipt.saleDate);
+          if (!date) return;
+          if (date.getFullYear() !== currentYear || date.getMonth() !== currentMonth) return;
+          receiptMonthMap.set(receipt.id, `${date.getFullYear()}-${date.getMonth()}`);
+        });
+
+        receiptItemsSnap.docs.forEach((itemDoc) => {
+          const item = { id: itemDoc.id, ...itemDoc.data() } as any;
+          const product = productsMap.get(item.productId);
+          const productName = (product as any)?.name || 'Unknown Product';
+          const amount = item.subtotal || 0;
+          allTimeProductSalesMap.set(productName, (allTimeProductSalesMap.get(productName) || 0) + amount);
+          if (!receiptMonthMap.has(item.receiptId)) return;
+          productSalesMap.set(productName, (productSalesMap.get(productName) || 0) + amount);
         });
 
         let materialCosts = 0;
@@ -179,7 +194,9 @@ export default function Dashboard() {
           { name: 'Retail', value: retail }
         ]);
 
-        const sortedProductSales = Array.from(productSalesMap.entries())
+        const sourceProductSales = productSalesMap.size > 0 ? productSalesMap : allTimeProductSalesMap;
+
+        const sortedProductSales = Array.from(sourceProductSales.entries())
           .map(([name, value]) => ({ name, value }))
           .sort((a, b) => b.value - a.value)
           .slice(0, 5); // Top 5 products
@@ -215,7 +232,7 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  const COLORS = ['#0f172a', '#64748b'];
+  const COLORS = CHART_COLORS;
 
   if (loading) {
     return <div className="space-y-6">
@@ -292,8 +309,8 @@ export default function Dashboard() {
                   cursor={{fill: '#f8fafc'}}
                   contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
                 />
-                <Bar dataKey="income" fill="#0f172a" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expenses" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="income" fill={COLORS[0]} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="expenses" fill={COLORS[2]} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

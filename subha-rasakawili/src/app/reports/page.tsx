@@ -1,19 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { Download, Calendar, TrendingUp, TrendingDown, PieChart as PieChartIcon, FileText } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
+import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { formatLKR, cn } from '../../lib/utils';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { toast } from 'sonner';
+import { CHART_COLORS } from '../../lib/chartColors';
 
 export default function Reports() {
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const reportRef = useRef<HTMLDivElement>(null);
+  const COLORS = CHART_COLORS;
 
   useEffect(() => {
     fetchReportData();
@@ -26,24 +29,30 @@ export default function Reports() {
       const generalExpSnap = await getDocs(collection(db, 'expense_general'));
 
       let income = 0;
-      receiptsSnap.forEach(d => {
+      receiptsSnap.forEach((d) => {
         const data = d.data();
-        if (!data.isReversed) income += data.totalAmount || 0;
+        if (!data.isReversed) income += Number(data.totalAmount || 0);
       });
 
       let materialCosts = 0;
-      purchasesSnap.forEach(d => {
+      purchasesSnap.forEach((d) => {
         const data = d.data();
-        if (!data.isReversed) materialCosts += data.totalAmount || 0;
+        if (!data.isReversed) materialCosts += Number(data.totalAmount || 0);
       });
 
       let generalCosts = 0;
-      const genericExpByCategory: any = {};
-      generalExpSnap.forEach(d => {
+      const genericExpByCategory: Record<string, number> = {};
+      generalExpSnap.forEach((d) => {
         const data = d.data();
-        generalCosts += data.amount || 0;
-        genericExpByCategory[data.category] = (genericExpByCategory[data.category] || 0) + (data.amount || 0);
+        const amount = Number(data.amount || 0);
+        generalCosts += amount;
+        const category = String(data.category || 'UNCATEGORIZED');
+        genericExpByCategory[category] = (genericExpByCategory[category] || 0) + amount;
       });
+
+      const expenseBreakdown = Object.entries(genericExpByCategory)
+        .map(([category, amount]) => ({ category, amount: Number(amount) }))
+        .sort((a, b) => b.amount - a.amount);
 
       setReportData({
         totalIncome: income,
@@ -51,7 +60,7 @@ export default function Reports() {
         totalGeneralExpense: generalCosts,
         totalExpenses: materialCosts + generalCosts,
         netProfit: income - (materialCosts + generalCosts),
-        expenseBreakdown: Object.entries(genericExpByCategory).map(([cat, amt]) => ({ category: cat, amount: amt }))
+        expenseBreakdown,
       });
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'reports');
@@ -62,7 +71,7 @@ export default function Reports() {
 
   const exportPDF = async () => {
     if (!reportRef.current) return;
-    const toastId = toast.loading("Generating PDF...");
+    const toastId = toast.loading('Generating PDF...');
     try {
       const canvas = await html2canvas(reportRef.current, { scale: 2 });
       const imgData = canvas.toDataURL('image/png');
@@ -72,14 +81,20 @@ export default function Reports() {
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`SweetBiz_Report_${new Date().toLocaleDateString()}.pdf`);
-      toast.success("PDF exported successfully", { id: toastId });
+      toast.success('PDF exported successfully', { id: toastId });
     } catch (e) {
       console.error(e);
-      toast.error("Failed to generate PDF", { id: toastId });
+      toast.error('Failed to generate PDF', { id: toastId });
     }
   };
 
-  if (loading) return <div className="animate-pulse space-y-4 pt-10"><div className="h-64 bg-slate-100 rounded-xl" /></div>;
+  if (loading) {
+    return (
+      <div className="animate-pulse space-y-4 pt-10">
+        <div className="h-64 bg-slate-100 rounded-xl" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -111,26 +126,26 @@ export default function Reports() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-3">
-          <ReportStat 
-            label="Total Revenue" 
-            value={formatLKR(reportData.totalIncome)} 
+          <ReportStat
+            label="Total Revenue"
+            value={formatLKR(reportData.totalIncome)}
             icon={TrendingUp}
             color="emerald"
           />
-          <ReportStat 
-            label="Total Expenses" 
-            value={formatLKR(reportData.totalExpenses)} 
+          <ReportStat
+            label="Total Expenses"
+            value={formatLKR(reportData.totalExpenses)}
             icon={TrendingDown}
             color="red"
           />
           <div className={cn(
-            "p-6 rounded-2xl flex flex-col justify-between border-2",
-            reportData.netProfit >= 0 ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100"
+            'p-6 rounded-2xl flex flex-col justify-between border-2',
+            reportData.netProfit >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'
           )}>
             <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Net Profit / Loss</p>
             <h3 className={cn(
-              "text-3xl font-black mt-2",
-              reportData.netProfit >= 0 ? "text-emerald-700" : "text-red-700"
+              'text-3xl font-black mt-2',
+              reportData.netProfit >= 0 ? 'text-emerald-700' : 'text-red-700'
             )}>
               {formatLKR(reportData.netProfit)}
             </h3>
@@ -159,7 +174,7 @@ export default function Reports() {
                 </TableRow>
                 <TableRow className="hover:bg-transparent border-t-2 border-slate-900 font-black">
                   <TableCell className="text-slate-900">Net Income</TableCell>
-                  <TableCell className={cn("text-right", reportData.netProfit >= 0 ? "text-emerald-600" : "text-red-600")}>
+                  <TableCell className={cn('text-right', reportData.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600')}>
                     {formatLKR(reportData.netProfit)}
                   </TableCell>
                 </TableRow>
@@ -172,6 +187,38 @@ export default function Reports() {
               <PieChartIcon className="w-5 h-5 text-slate-400" />
               <h4 className="font-bold text-slate-800">Expense by Category</h4>
             </div>
+
+            <Card className="border-none shadow-sm overflow-hidden bg-slate-50/40">
+              <CardContent className="h-[320px] pt-4">
+                {reportData.expenseBreakdown.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={reportData.expenseBreakdown}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={68}
+                        outerRadius={100}
+                        paddingAngle={4}
+                        dataKey="amount"
+                        nameKey="category"
+                      >
+                        {reportData.expenseBreakdown.map((entry: any, index: number) => (
+                          <Cell key={`cell-${entry.category}-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any, name: any) => [formatLKR(value), String(name).toLowerCase().replace('_', ' ')]} />
+                      <Legend formatter={(value: any) => String(value).toLowerCase().replace('_', ' ')} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                    No expenses recorded for this period.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent border-slate-100">
@@ -188,7 +235,7 @@ export default function Reports() {
                 ))}
                 {reportData.expenseBreakdown.length === 0 && (
                   <TableRow>
-                     <TableCell colSpan={2} className="text-center py-8 text-slate-400 text-sm">No expenses recorded for this period.</TableCell>
+                    <TableCell colSpan={2} className="text-center py-8 text-slate-400 text-sm">No expenses recorded for this period.</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -206,13 +253,13 @@ export default function Reports() {
 
 function ReportStat({ label, value, icon: Icon, color }: any) {
   const colors: any = {
-    emerald: "text-emerald-600 bg-emerald-50",
-    red: "text-red-600 bg-red-50"
+    emerald: 'text-emerald-600 bg-emerald-50',
+    red: 'text-red-600 bg-red-50',
   };
 
   return (
     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-4", colors[color])}>
+      <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center mb-4', colors[color])}>
         <Icon className="w-6 h-6" />
       </div>
       <p className="text-xs font-bold uppercase tracking-widest text-slate-400">{label}</p>
