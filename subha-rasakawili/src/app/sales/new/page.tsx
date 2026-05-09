@@ -264,7 +264,9 @@ export default function NewSale() {
                   onValueChange={handleCustomerChange}
                 >
                   <SelectTrigger className="h-11 border-slate-200">
-                    <SelectValue placeholder="Select or search customer" />
+                    <SelectValue placeholder="Select or search customer">
+                      {customers.find(c => c.id === selectedCustomer)?.name ?? undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {customers.map(c => (

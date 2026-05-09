@@ -17,6 +17,7 @@ export default function Purchases() {
   const [ingredients, setIngredients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [selectedIngredient, setSelectedIngredient] = useState<string>("");
 
   useEffect(() => {
     fetchData();
@@ -102,7 +103,7 @@ export default function Purchases() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Material Purchases</h1>
           <p className="text-slate-500 mt-1">Track raw material stock-ins and costs.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <Dialog open={isAddOpen} onOpenChange={(open) => { setIsAddOpen(open); if (!open) setSelectedIngredient(""); }}>
           <DialogTrigger render={<Button className="bg-slate-900"><Plus className="w-4 h-4 mr-2" /> New Purchase</Button>} />
           <DialogContent>
             <form onSubmit={handleAddPurchase}>
@@ -113,9 +114,11 @@ export default function Purchases() {
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label>Ingredient</Label>
-                  <Select name="ingredientId" required>
+                  <Select name="ingredientId" required value={selectedIngredient} onValueChange={(val) => setSelectedIngredient(val)}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select ingredient" />
+                      <SelectValue placeholder="Select ingredient">
+                        {ingredients.find(i => i.id === selectedIngredient)?.name ?? undefined}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {ingredients.map(ing => (
