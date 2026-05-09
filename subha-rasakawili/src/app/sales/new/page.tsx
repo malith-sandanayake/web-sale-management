@@ -191,8 +191,10 @@ export default function NewSale() {
                           onValueChange={(val) => handleItemChange(item.id, 'productId', val)}
                         >
                           <SelectTrigger className="border-slate-200">
-                            <SelectValue placeholder="Select product" />
-                          </SelectTrigger>
+                              <SelectValue placeholder="Select product">
+                                {products.find(p => p.id === item.productId)?.name ?? undefined}
+                              </SelectValue>
+                            </SelectTrigger>
                           <SelectContent>
                             {products.map(p => (
                               <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
