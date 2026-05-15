@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
+import { generateNextCustomerCode } from '../../lib/utils';
 import { toast } from 'sonner';
 import { CustomerType } from '../../types';
 
@@ -43,7 +44,9 @@ export default function Customers() {
   const handleAddCustomer = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const nextCode = generateNextCustomerCode(customers);
     const data = {
+      customerCode: nextCode,
       name: formData.get('name') as string,
       customerType: formData.get('customerType') as string,
       phone: formData.get('phone') as string,
@@ -105,7 +108,10 @@ export default function Customers() {
     }
   };
 
-  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = customers.filter(c => 
+    c.name.toLowerCase().includes(search.toLowerCase()) || 
+    (c.customerCode && c.customerCode.includes(search))
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -205,7 +211,7 @@ export default function Customers() {
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input 
-              placeholder="Search by name..." 
+              placeholder="Search by name or code..." 
               className="pl-10 bg-slate-50 border-none h-10" 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -216,6 +222,7 @@ export default function Customers() {
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50/50 hover:bg-slate-50/50 border-slate-100">
+                <TableHead className="w-20 font-semibold">Code</TableHead>
                 <TableHead className="font-semibold px-6">Customer Name</TableHead>
                 <TableHead className="font-semibold">Type</TableHead>
                 <TableHead className="font-semibold">Contact</TableHead>
@@ -227,11 +234,12 @@ export default function Customers() {
               {loading ? (
                 [1,2,3].map(i => (
                   <TableRow key={i}>
-                    <TableCell colSpan={5}><div className="h-10 animate-pulse bg-slate-100 rounded w-full" /></TableCell>
+                    <TableCell colSpan={6}><div className="h-10 animate-pulse bg-slate-100 rounded w-full" /></TableCell>
                   </TableRow>
                 ))
               ) : filtered.map((customer) => (
                 <TableRow key={customer.id} className="border-slate-50 group">
+                  <TableCell className="font-mono font-semibold text-slate-600">{customer.customerCode || '-'}</TableCell>
                   <TableCell className="px-6 font-medium text-slate-900">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
@@ -268,7 +276,7 @@ export default function Customers() {
               ))}
               {!loading && filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-12 text-slate-400">
+                  <TableCell colSpan={6} className="text-center py-12 text-slate-400">
                     No customers found.
                   </TableCell>
                 </TableRow>

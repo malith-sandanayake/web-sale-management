@@ -28,6 +28,7 @@ export enum ExpenseCategory {
 
 export interface Product {
   id: string;
+  productCode: string;
   name: string;
   unitType: UnitType;
   wholesalePrice: number;
@@ -39,6 +40,7 @@ export interface Product {
 
 export interface Ingredient {
   id: string;
+  ingredientCode: string;
   name: string;
   unit: string;
   currentUnitCost: number;
@@ -56,6 +58,7 @@ export interface ProductRecipe {
 
 export interface Customer {
   id: string;
+  customerCode: string;
   name: string;
   customerType: CustomerType;
   phone?: string;

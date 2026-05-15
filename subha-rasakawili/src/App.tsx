@@ -4,6 +4,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { Toaster } from 'sonner';
 import { seedDatabase } from './lib/seed';
+import { migrateProductCodes, migrateIngredientCodes, migrateCustomerCodes } from './lib/migrations';
 
 // Layout
 import Sidebar from './components/layout/Sidebar';
@@ -48,6 +49,9 @@ export default function App() {
       setLoading(false);
       if (user) {
         seedDatabase().catch(console.error);
+        migrateProductCodes().catch(console.error);
+        migrateIngredientCodes().catch(console.error);
+        migrateCustomerCodes().catch(console.error);
       }
     });
     return unsubscribe;

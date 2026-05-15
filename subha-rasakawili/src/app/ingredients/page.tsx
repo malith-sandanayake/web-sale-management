@@ -8,7 +8,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
-import { formatLKR } from '../../lib/utils';
+import { formatLKR, generateNextIngredientCode } from '../../lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
 import { Label } from '../../components/ui/label';
 import { toast } from 'sonner';
@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 export default function Ingredients() {
   const [ingredients, setIngredients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isUpdateLoading, setIsUpdateLoading] = useState(false);
@@ -41,7 +42,9 @@ export default function Ingredients() {
   const handleAddIngredient = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const nextCode = generateNextIngredientCode(ingredients);
     const data = {
+      ingredientCode: nextCode,
       name: formData.get('name') as string,
       unit: formData.get('unit') as string,
       currentUnitCost: parseFloat(formData.get('cost') as string || '0'),
@@ -105,6 +108,11 @@ export default function Ingredients() {
       handleFirestoreError(e, OperationType.DELETE, 'ingredients');
     }
   };
+
+  const filtered = ingredients.filter(i => 
+    i.name.toLowerCase().includes(search.toLowerCase()) || 
+    (i.ingredientCode && i.ingredientCode.includes(search))
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -179,10 +187,22 @@ export default function Ingredients() {
       </div>
 
       <Card className="border-none shadow-sm overflow-hidden">
+        <CardHeader className="pb-3 border-b">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input 
+              placeholder="Search by name or code..." 
+              className="pl-10 bg-slate-50 border-none h-10" 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
                 <TableRow className="bg-slate-50 hover:bg-slate-50 border-slate-100">
+                <TableHead className="w-20 font-semibold">Code</TableHead>
                 <TableHead className="px-6 font-semibold">Name</TableHead>
                 <TableHead className="font-semibold">Unit</TableHead>
                 <TableHead className="font-semibold">Current Unit Cost</TableHead>
@@ -194,11 +214,12 @@ export default function Ingredients() {
               {loading ? (
                 [1,2,3].map(i => (
                   <TableRow key={i}>
-                    <TableCell colSpan={4} className="px-6 py-4"><div className="h-8 animate-pulse bg-slate-100 rounded" /></TableCell>
+                    <TableCell colSpan={6} className="px-6 py-4"><div className="h-8 animate-pulse bg-slate-100 rounded" /></TableCell>
                   </TableRow>
                 ))
-              ) : ingredients.map((ing) => (
+              ) : filtered.map((ing) => (
                 <TableRow key={ing.id} className="border-slate-50">
+                  <TableCell className="font-mono font-semibold text-slate-600">{ing.ingredientCode || '-'}</TableCell>
                   <TableCell className="px-6 font-medium">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded bg-emerald-50 flex items-center justify-center">
@@ -228,9 +249,9 @@ export default function Ingredients() {
                   </TableCell>
                 </TableRow>
               ))}
-              {!loading && ingredients.length === 0 && (
+              {!loading && filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-12 text-slate-400">No ingredients found.</TableCell>
+                  <TableCell colSpan={6} className="text-center py-12 text-slate-400">No ingredients found.</TableCell>
                 </TableRow>
               )}
             </TableBody>

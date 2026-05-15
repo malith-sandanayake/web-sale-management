@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { formatLKR } from '@/lib/utils';
+import { formatLKR, generateNextProductCode } from '@/lib/utils';
 import { toast } from 'sonner';
 import { UnitType } from '@/types';
 
@@ -48,7 +48,9 @@ export default function Products() {
   const handleAddProduct = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const nextCode = generateNextProductCode(products);
     const data = {
+      productCode: nextCode,
       name: formData.get('name') as string,
       unitType: formData.get('unitType') as string,
       wholesalePrice: parseFloat(formData.get('wholesalePrice') as string),
@@ -151,7 +153,10 @@ export default function Products() {
     }
   };
 
-  const filtered = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = products.filter(p => 
+    p.name.toLowerCase().includes(search.toLowerCase()) || 
+    (p.productCode && p.productCode.includes(search))
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -299,7 +304,7 @@ export default function Products() {
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input 
-              placeholder="Search products..." 
+              placeholder="Search by name or code..." 
               className="pl-10 bg-slate-50 border-none h-10" 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -310,7 +315,8 @@ export default function Products() {
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50/50 hover:bg-slate-50/50 border-slate-100">
-                <TableHead className="w-[300px] font-semibold">Name</TableHead>
+                <TableHead className="w-20 font-semibold">Code</TableHead>
+                <TableHead className="w-[260px] font-semibold">Name</TableHead>
                 <TableHead className="font-semibold">Unit</TableHead>
                 <TableHead className="font-semibold">Wholesale Price</TableHead>
                 <TableHead className="font-semibold">Retail Price</TableHead>
@@ -322,11 +328,12 @@ export default function Products() {
               {loading ? (
                 [1,2,3].map(i => (
                   <TableRow key={i}>
-                    <TableCell colSpan={6}><div className="h-10 animate-pulse bg-slate-100 rounded w-full" /></TableCell>
+                    <TableCell colSpan={7}><div className="h-10 animate-pulse bg-slate-100 rounded w-full" /></TableCell>
                   </TableRow>
                 ))
               ) : filtered.map((product) => (
                 <TableRow key={product.id} className="border-slate-50">
+                  <TableCell className="font-mono font-semibold text-slate-600">{product.productCode || '-'}</TableCell>
                   <TableCell className="font-medium text-slate-900">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center">
@@ -364,7 +371,7 @@ export default function Products() {
               ))}
               {!loading && filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12 text-slate-400">
+                  <TableCell colSpan={7} className="text-center py-12 text-slate-400">
                     No products found.
                   </TableCell>
                 </TableRow>
