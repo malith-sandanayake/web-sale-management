@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, doc, getDoc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { Search, Filter, Receipt as ReceiptIcon, Eye, Download, Calendar, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
@@ -17,6 +17,38 @@ export default function SalesList() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedSale, setSelectedSale] = useState<any>(null);
+  const [saleItems, setSaleItems] = useState<any[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+
+  useEffect(() => {
+    async function fetchSaleItems() {
+      if (!selectedSale) {
+        setSaleItems([]);
+        return;
+      }
+      setItemsLoading(true);
+      try {
+        const q = query(collection(db, 'receipt_items'), where('receiptId', '==', selectedSale.id));
+        const snap = await getDocs(q);
+        const itemsData = await Promise.all(snap.docs.map(async (d) => {
+          const data = d.data();
+          const productSnap = await getDoc(doc(db, 'products', data.productId));
+          return {
+            id: d.id,
+            ...data,
+            productName: productSnap.exists() ? productSnap.data().name : 'Unknown Product',
+            productCode: productSnap.exists() ? productSnap.data().productCode : 'N/A'
+          };
+        }));
+        setSaleItems(itemsData);
+      } catch (e) {
+        console.error("Failed to fetch sale items", e);
+      } finally {
+        setItemsLoading(false);
+      }
+    }
+    fetchSaleItems();
+  }, [selectedSale]);
 
   useEffect(() => {
     fetchSales();
@@ -182,10 +214,46 @@ export default function SalesList() {
               </div>
               
               <div>
-                <h4 className="font-semibold mb-2">Payment Information</h4>
-                <div className="flex items-center justify-between p-3 border rounded-lg">
-                  <span className="text-slate-600">Method</span>
-                  <span className="font-medium">CASH</span>
+                <h4 className="font-semibold mb-2">Itemized Breakdown</h4>
+                <div className="border border-slate-100 rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-slate-50/50">
+                      <TableRow className="border-slate-100 hover:bg-transparent">
+                        <TableHead className="w-[100px] font-semibold text-slate-600">Code</TableHead>
+                        <TableHead className="font-semibold text-slate-600">Item Name</TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600">Qty</TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600">Unit Price</TableHead>
+                        <TableHead className="text-right font-semibold text-slate-600">Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {itemsLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8 text-slate-500">
+                            <div className="animate-pulse space-y-3">
+                               <div className="h-4 bg-slate-100 rounded w-full"></div>
+                               <div className="h-4 bg-slate-100 rounded w-full"></div>
+                               <div className="h-4 bg-slate-100 rounded w-full"></div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : saleItems.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8 text-slate-400 font-medium">No items found.</TableCell>
+                        </TableRow>
+                      ) : (
+                        saleItems.map((item) => (
+                          <TableRow key={item.id} className="border-slate-50 hover:bg-slate-50/20">
+                            <TableCell className="text-xs font-mono text-slate-500">{item.productCode}</TableCell>
+                            <TableCell className="font-medium text-slate-900">{item.productName}</TableCell>
+                            <TableCell className="text-right">{item.quantity} <span className="text-[10px] uppercase font-bold text-slate-400">{item.unitType}</span></TableCell>
+                            <TableCell className="text-right">{formatLKR(item.unitPrice)}</TableCell>
+                            <TableCell className="text-right font-bold text-slate-900">{formatLKR(item.subtotal)}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
 
@@ -194,8 +262,9 @@ export default function SalesList() {
                 <span>{formatLKR(selectedSale.totalAmount)}</span>
               </div>
               
-              <div className="text-center text-xs text-slate-400 italic">
-                * Itemized breakdown fetch disabled in this view for performance.
+              <div className="text-xs text-slate-500 p-4 bg-slate-50 rounded-lg border border-slate-100">
+                <p className="font-semibold text-slate-700 mb-1">Notes / Return Policy</p>
+                <p>Items can be returned within 7 days of purchase with the original receipt. {selectedSale.notes && `Transaction note: ${selectedSale.notes}`}</p>
               </div>
             </div>
           )}
