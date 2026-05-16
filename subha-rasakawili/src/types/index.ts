@@ -70,6 +70,8 @@ export interface Ingredient {
   currentUnitCost: number;
   currentStock: number;
   reorderLevel: number;
+  source?: 'IN_HOUSE' | 'SOURCED';
+  supplierId?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt?: string;

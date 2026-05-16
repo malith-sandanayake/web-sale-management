@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
 import { formatLKR, generateNextIngredientCode } from '../../lib/utils';
-import { Ingredient, StockMovement, StockMovementType, StockReferenceType } from '../../types';
+import { Ingredient, StockMovement, StockMovementType, StockReferenceType, Supplier } from '../../types';
 import { toast } from 'sonner';
 
 const emptyAdjustForm = {
@@ -31,6 +31,7 @@ const emptyAddForm = {
 export default function Inventory() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isAdjustOpen, setIsAdjustOpen] = useState(false);
@@ -41,6 +42,8 @@ export default function Inventory() {
 
     const [isAddIngredientOpen, setIsAddIngredientOpen] = useState(false);
     const [addForm, setAddForm] = useState(emptyAddForm);
+    const [addIngredientSource, setAddIngredientSource] = useState<'IN_HOUSE' | 'SOURCED'>('IN_HOUSE');
+    const [addIngredientSupplierId, setAddIngredientSupplierId] = useState<string>('');
     const [isAddingSaving, setIsAddingSaving] = useState(false);
 
   useEffect(() => {
@@ -49,13 +52,15 @@ export default function Inventory() {
 
   async function fetchData() {
     try {
-      const [ingredientSnap, movementSnap] = await Promise.all([
+      const [ingredientSnap, movementSnap, supplierSnap] = await Promise.all([
         getDocs(query(collection(db, 'ingredients'), orderBy('createdAt', 'desc'))),
         getDocs(query(collection(db, 'stock_movements'), orderBy('createdAt', 'desc'))),
+        getDocs(collection(db, 'suppliers')),
       ]);
 
       setIngredients(ingredientSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Ingredient)));
       setMovements(movementSnap.docs.map((d) => ({ id: d.id, ...d.data() } as StockMovement)));
+      setSuppliers(supplierSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Supplier)));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'inventory');
     } finally {
@@ -120,12 +125,16 @@ export default function Inventory() {
           currentUnitCost: parseFloat(addForm.currentUnitCost) || 0,
           currentStock: 0,
           reorderLevel: parseFloat(addForm.reorderLevel) || 0,
+          source: addIngredientSource,
+          supplierId: addIngredientSource === 'SOURCED' ? addIngredientSupplierId || null : null,
           isActive: true,
           createdAt: new Date().toISOString(),
         });
         toast.success('Ingredient added to inventory');
         setIsAddIngredientOpen(false);
         setAddForm(emptyAddForm);
+        setAddIngredientSource('IN_HOUSE');
+        setAddIngredientSupplierId('');
         fetchData();
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, 'ingredients');
@@ -209,7 +218,7 @@ export default function Inventory() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Inventory</h1>
           <p className="text-slate-500 mt-1">Monitor stock levels and record inventory movements.</p>
         </div>
-         <Dialog open={isAddIngredientOpen} onOpenChange={setIsAddIngredientOpen}>
+         <Dialog open={isAddIngredientOpen} onOpenChange={(open) => { setIsAddIngredientOpen(open); if (!open) { setAddIngredientSource('IN_HOUSE'); setAddIngredientSupplierId(''); } }}>
            <DialogTrigger render={<Button className="bg-slate-900"><Plus className="w-4 h-4 mr-2" /> Add Ingredient</Button>} />
            <DialogContent>
              <form onSubmit={handleAddIngredient}>
@@ -218,6 +227,29 @@ export default function Inventory() {
                  <DialogDescription>Add a new ingredient to your inventory.</DialogDescription>
                </DialogHeader>
                <div className="grid gap-4 py-4">
+                 <div className="grid gap-2">
+                   <Label>Ingredient Source</Label>
+                   <Select value={addIngredientSource} onValueChange={(value) => { setAddIngredientSource(value as 'IN_HOUSE' | 'SOURCED'); setAddIngredientSupplierId(''); }}>
+                     <SelectTrigger><SelectValue /></SelectTrigger>
+                     <SelectContent>
+                       <SelectItem value="IN_HOUSE">Made In-House</SelectItem>
+                       <SelectItem value="SOURCED">Sourced from Supplier</SelectItem>
+                     </SelectContent>
+                   </Select>
+                 </div>
+                 {addIngredientSource === 'SOURCED' && (
+                   <div className="grid gap-2">
+                     <Label>Supplier</Label>
+                     <Select value={addIngredientSupplierId} onValueChange={setAddIngredientSupplierId}>
+                       <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                       <SelectContent>
+                         {suppliers.map((supplier) => (
+                           <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
+                         ))}
+                       </SelectContent>
+                     </Select>
+                   </div>
+                 )}
                  <div className="grid gap-2">
                    <Label htmlFor="ingredient-name">Ingredient Name</Label>
                    <Input id="ingredient-name" value={addForm.name} onChange={(e) => setAddForm((prev) => ({ ...prev, name: e.target.value }))} required placeholder="e.g. Rice" />
@@ -236,7 +268,7 @@ export default function Inventory() {
                  </div>
                </div>
                <DialogFooter>
-                 <Button type="button" variant="outline" onClick={() => setIsAddIngredientOpen(false)}>Cancel</Button>
+                 <Button type="button" variant="outline" onClick={() => { setIsAddIngredientOpen(false); setAddIngredientSource('IN_HOUSE'); setAddIngredientSupplierId(''); }}>Cancel</Button>
                  <Button type="submit" className="bg-slate-900" disabled={isAddingSaving}>{isAddingSaving ? 'Adding...' : 'Add Ingredient'}</Button>
                </DialogFooter>
              </form>
@@ -289,6 +321,7 @@ export default function Inventory() {
                 <TableHead className="font-semibold">Unit Cost</TableHead>
                 <TableHead className="font-semibold">Total Stock Value</TableHead>
                 <TableHead className="font-semibold">Status</TableHead>
+                <TableHead className="font-semibold">Source</TableHead>
                 <TableHead className="text-right font-semibold pr-6">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -296,11 +329,14 @@ export default function Inventory() {
               {loading ? (
                 [1, 2, 3].map((row) => (
                   <TableRow key={row}>
-                    <TableCell colSpan={9} className="px-6 py-4"><div className="h-8 animate-pulse bg-slate-100 rounded w-full" /></TableCell>
+                    <TableCell colSpan={10} className="px-6 py-4"><div className="h-8 animate-pulse bg-slate-100 rounded w-full" /></TableCell>
                   </TableRow>
                 ))
               ) : filteredIngredients.map((ingredient) => {
                 const status = getStatus(ingredient);
+                const source = ingredient.source === 'SOURCED'
+                  ? { label: 'Supplier', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100' }
+                  : { label: 'In-House', className: 'bg-violet-100 text-violet-700 hover:bg-violet-100' };
                 const totalValue = Number(ingredient.currentStock || 0) * Number(ingredient.currentUnitCost || 0);
                 return (
                   <TableRow key={ingredient.id} className="border-slate-50 group">
@@ -323,6 +359,9 @@ export default function Inventory() {
                     <TableCell>
                       <Badge className={status.className}>{status.label}</Badge>
                     </TableCell>
+                    <TableCell>
+                      <Badge className={source.className}>{source.label}</Badge>
+                    </TableCell>
                     <TableCell className="text-right pr-6">
                       <div className="flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => openAdjustDialog(ingredient)} title="Adjust stock">
@@ -338,7 +377,7 @@ export default function Inventory() {
               })}
               {!loading && filteredIngredients.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-16 text-slate-400">No ingredients found.</TableCell>
+                  <TableCell colSpan={10} className="text-center py-16 text-slate-400">No ingredients found.</TableCell>
                 </TableRow>
               )}
             </TableBody>
