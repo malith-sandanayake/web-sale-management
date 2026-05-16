@@ -11,6 +11,40 @@ type CodeDoc = {
   reorderLevel?: number;
 };
 
+type PurchaseDoc = {
+  id: string;
+  ingredientId?: string;
+  supplierId?: string | null;
+  purchaseDate?: string;
+  quantity?: number;
+  unitRate?: number;
+  totalAmount?: number;
+  notes?: string;
+  isReversed?: boolean;
+};
+
+type SupplierDoc = {
+  id: string;
+  outstandingBalance?: number;
+};
+
+type IngredientDoc = {
+  id: string;
+  currentStock?: number;
+  currentUnitCost?: number;
+};
+
+type SupplierTransactionDoc = {
+  id: string;
+  supplierId?: string;
+  referenceId?: string;
+};
+
+type StockMovementDoc = {
+  id: string;
+  referenceId?: string;
+};
+
 export async function migrateProductCodes() {
   try {
     const productsSnap = await getDocs(collection(db, 'products'));
@@ -166,5 +200,109 @@ export async function migrateIngredientStockFields() {
   } catch (error) {
     console.error('Migration error:', error);
     throw new Error('Failed to migrate ingredient stock fields');
+  }
+}
+
+export async function migrateAccountingLedgers() {
+  try {
+    const [purchaseSnap, supplierSnap, ingredientSnap, supplierTransactionSnap, stockMovementSnap] = await Promise.all([
+      getDocs(collection(db, 'expense_purchases')),
+      getDocs(collection(db, 'suppliers')),
+      getDocs(collection(db, 'ingredients')),
+      getDocs(collection(db, 'supplier_transactions')),
+      getDocs(collection(db, 'stock_movements')),
+    ]);
+
+    const purchases = purchaseSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as PurchaseDoc[];
+    const suppliers = supplierSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as SupplierDoc[];
+    const ingredients = ingredientSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as IngredientDoc[];
+    const supplierTransactions = supplierTransactionSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as SupplierTransactionDoc[];
+    const stockMovements = stockMovementSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as StockMovementDoc[];
+
+    const existingMovementRefs = new Set(stockMovements.map((movement) => movement.referenceId).filter(Boolean) as string[]);
+    const existingSupplierTxRefs = new Set(supplierTransactions.map((transaction) => transaction.referenceId).filter(Boolean) as string[]);
+
+    const ingredientBalances = ingredients.reduce<Record<string, number>>((acc, ingredient) => {
+      acc[ingredient.id] = Number(ingredient.currentStock || 0);
+      return acc;
+    }, {});
+
+    const supplierBalances = suppliers.reduce<Record<string, number>>((acc, supplier) => {
+      acc[supplier.id] = Number(supplier.outstandingBalance || 0);
+      return acc;
+    }, {});
+
+    const batch = writeBatch(db);
+    let writes = 0;
+
+    const sortedPurchases = purchases
+      .filter((purchase) => !purchase.isReversed)
+      .sort((a, b) => new Date(a.purchaseDate || 0).getTime() - new Date(b.purchaseDate || 0).getTime());
+
+    for (const purchase of sortedPurchases) {
+      if (!purchase.id || !purchase.ingredientId) continue;
+
+      const createdAt = purchase.purchaseDate || new Date().toISOString();
+      const quantity = Number(purchase.quantity || 0);
+      const unitRate = Number(purchase.unitRate || 0);
+      const totalAmount = Number(purchase.totalAmount || quantity * unitRate);
+
+      if (!existingMovementRefs.has(purchase.id)) {
+        const currentBalance = Number(ingredientBalances[purchase.ingredientId] || 0) + quantity;
+        ingredientBalances[purchase.ingredientId] = currentBalance;
+
+        batch.set(doc(db, 'stock_movements', doc(collection(db, 'stock_movements')).id), {
+          ingredientId: purchase.ingredientId,
+          movementType: 'STOCK_IN',
+          quantity,
+          unitCost: unitRate,
+          totalValue: totalAmount,
+          referenceType: 'PURCHASE',
+          referenceId: purchase.id,
+          notes: purchase.notes || 'Backfilled from purchase history',
+          balanceAfter: currentBalance,
+          createdAt,
+        });
+        batch.update(doc(db, 'ingredients', purchase.ingredientId), {
+          currentStock: currentBalance,
+          currentUnitCost: unitRate,
+          updatedAt: createdAt,
+        });
+        existingMovementRefs.add(purchase.id);
+        writes++;
+      }
+
+      if (purchase.supplierId && !existingSupplierTxRefs.has(purchase.id)) {
+        const currentBalance = Number(supplierBalances[purchase.supplierId] || 0) + totalAmount;
+        supplierBalances[purchase.supplierId] = currentBalance;
+
+        batch.set(doc(db, 'supplier_transactions', doc(collection(db, 'supplier_transactions')).id), {
+          supplierId: purchase.supplierId,
+          type: 'PURCHASE',
+          referenceId: purchase.id,
+          amount: totalAmount,
+          balanceBefore: currentBalance - totalAmount,
+          balanceAfter: currentBalance,
+          notes: purchase.notes || 'Backfilled from purchase history',
+          createdAt,
+        });
+        batch.update(doc(db, 'suppliers', purchase.supplierId), {
+          outstandingBalance: currentBalance,
+          updatedAt: createdAt,
+        });
+        existingSupplierTxRefs.add(purchase.id);
+        writes++;
+      }
+    }
+
+    if (writes > 0) {
+      await batch.commit();
+    }
+
+    console.log(`Backfilled accounting ledgers from ${writes} purchase-linked records`);
+    return { updated: writes, message: `Backfilled accounting ledgers from ${writes} purchase-linked records` };
+  } catch (error) {
+    console.error('Migration error:', error);
+    throw new Error('Failed to migrate accounting ledgers');
   }
 }

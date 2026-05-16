@@ -4,7 +4,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { Toaster } from 'sonner';
 import { seedDatabase } from './lib/seed';
-import { migrateProductCodes, migrateIngredientCodes, migrateCustomerCodes, migrateIngredientStockFields } from './lib/migrations';
+import { migrateProductCodes, migrateIngredientCodes, migrateCustomerCodes, migrateIngredientStockFields, migrateAccountingLedgers } from './lib/migrations';
 
 // Layout
 import Sidebar from './components/layout/Sidebar';
@@ -57,6 +57,7 @@ export default function App() {
         migrateIngredientCodes().catch(console.error);
         migrateCustomerCodes().catch(console.error);
         migrateIngredientStockFields().catch(console.error);
+        migrateAccountingLedgers().catch(console.error);
       }
     });
     return unsubscribe;

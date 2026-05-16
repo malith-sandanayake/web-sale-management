@@ -50,6 +50,11 @@ function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0);
 }
 
+function parseDate(value?: string) {
+  const date = value ? new Date(value) : new Date(0);
+  return Number.isNaN(date.getTime()) ? new Date(0) : date;
+}
+
 export default function Accounts() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [purchases, setPurchases] = useState<ExpensePurchase[]>([]);
@@ -58,7 +63,7 @@ export default function Accounts() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [supplierTransactions, setSupplierTransactions] = useState<SupplierTransaction[]>([]);
-  const [period, setPeriod] = useState<Period>('THIS_MONTH');
+  const [period, setPeriod] = useState<Period>('ALL_TIME');
   const [activeTab, setActiveTab] = useState<TabKey>('income');
   const [loading, setLoading] = useState(true);
   const statementRef = useRef<HTMLDivElement>(null);
@@ -102,7 +107,7 @@ export default function Accounts() {
 
     const latestStockByIngredient = stockMovements.reduce<Record<string, StockMovement>>((acc, movement) => {
       const existing = acc[movement.ingredientId];
-      if (!existing || new Date(movement.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+      if (!existing || parseDate(movement.createdAt).getTime() > parseDate(existing.createdAt).getTime()) {
         acc[movement.ingredientId] = movement;
       }
       return acc;
@@ -110,9 +115,27 @@ export default function Accounts() {
 
     const latestSupplierBalanceBySupplier = supplierTransactions.reduce<Record<string, SupplierTransaction>>((acc, transaction) => {
       const existing = acc[transaction.supplierId];
-      if (!existing || new Date(transaction.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+      if (!existing || parseDate(transaction.createdAt).getTime() > parseDate(existing.createdAt).getTime()) {
         acc[transaction.supplierId] = transaction;
       }
+      return acc;
+    }, {});
+
+    const ingredientPurchaseStock = validPurchases.reduce<Record<string, number>>((acc, purchase) => {
+      if (!purchase.ingredientId) return acc;
+      acc[purchase.ingredientId] = (acc[purchase.ingredientId] || 0) + Number(purchase.quantity || 0);
+      return acc;
+    }, {});
+
+    const ingredientPurchaseCost = validPurchases.reduce<Record<string, number>>((acc, purchase) => {
+      if (!purchase.ingredientId) return acc;
+      acc[purchase.ingredientId] = Number(purchase.unitRate || 0);
+      return acc;
+    }, {});
+
+    const supplierPurchaseBalances = validPurchases.reduce<Record<string, number>>((acc, purchase) => {
+      if (!purchase.supplierId) return acc;
+      acc[purchase.supplierId] = (acc[purchase.supplierId] || 0) + Number(purchase.totalAmount || 0);
       return acc;
     }, {});
 
@@ -141,12 +164,19 @@ export default function Accounts() {
 
     const totalSalesToDate = sum(validReceipts.map((receipt) => Number(receipt.totalAmount || 0)));
     const inventoryValue = sum(ingredients.map((ingredient) => {
-      const currentStock = Number(latestStockByIngredient[ingredient.id]?.balanceAfter ?? ingredient.currentStock ?? 0);
-      return currentStock * Number(ingredient.currentUnitCost || 0);
+      const movementBalance = latestStockByIngredient[ingredient.id]?.balanceAfter;
+      const reconstructedStock = ingredientPurchaseStock[ingredient.id] || 0;
+      const currentStock = Number(movementBalance ?? ingredient.currentStock ?? reconstructedStock ?? 0);
+      const currentUnitCost = Number(ingredient.currentUnitCost || ingredientPurchaseCost[ingredient.id] || 0);
+      return currentStock * currentUnitCost;
     }));
     const cashReceivables = totalSalesToDate;
     const totalAssets = inventoryValue + cashReceivables;
-    const supplierPayables = sum(suppliers.map((supplier) => Number(latestSupplierBalanceBySupplier[supplier.id]?.balanceAfter ?? supplier.outstandingBalance ?? 0)));
+    const supplierPayables = sum(suppliers.map((supplier) => {
+      const balanceFromLedger = latestSupplierBalanceBySupplier[supplier.id]?.balanceAfter;
+      const balanceFromPurchases = supplierPurchaseBalances[supplier.id] || 0;
+      return Number(balanceFromLedger ?? supplier.outstandingBalance ?? balanceFromPurchases ?? 0);
+    }));
     const totalLiabilities = supplierPayables;
     const retainedEarnings = totalAssets - totalLiabilities;
 
@@ -157,18 +187,18 @@ export default function Accounts() {
     const balancingAmount = Math.abs(debitBase - creditBase);
     const balancingSide: 'debit' | 'credit' = debitBase > creditBase ? 'credit' : 'debit';
 
+    const expenseLines = Object.entries(
+      validExpenses.reduce((acc: Record<string, number>, expense) => {
+        const key = String(expense.category || ExpenseCategory.OTHER);
+        acc[key] = (acc[key] || 0) + Number(expense.amount || 0);
+        return acc;
+      }, {})
+    ).map(([category, amount]) => ({ accountName: `General Expense - ${category.replace('_', ' ')}`, debit: Number(amount || 0), credit: 0 }));
+
     const trialRows: Array<{ accountName: string; debit: number; credit: number }> = [
       { accountName: 'Sales Revenue', debit: 0, credit: totalSalesToDate },
       { accountName: 'Material Purchases', debit: allTimeCogs, credit: 0 },
-      ...Object.entries(
-        validExpenses.reduce((acc: Record<string, number>, expense) => {
-          const key = String(expense.category || ExpenseCategory.OTHER);
-          acc[key] = (acc[key] || 0) + Number(expense.amount || 0);
-          return acc;
-        }, {})
-      )
-        .map(([category, amount]) => ({ accountName: `General Expense - ${category.replace('_', ' ')}`, debit: amount, credit: 0 }))
-        .sort((a, b) => b.debit - a.debit),
+      ...expenseLines.sort((a, b) => b.debit - a.debit),
       { accountName: 'Inventory Asset', debit: inventoryValue, credit: 0 },
       { accountName: 'Supplier Payables', debit: 0, credit: supplierPayables },
       {
