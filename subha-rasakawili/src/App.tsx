@@ -31,11 +31,11 @@ import type { ReactNode } from 'react';
 
 function ProtectedLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex bg-slate-50 min-h-dvh overflow-hidden">
+    <div className="flex h-dvh bg-slate-50 overflow-hidden">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Topbar />
-        <main className="flex-1 p-8 overflow-auto min-h-0">
+        <main className="flex-1 overflow-y-auto p-8">
           {children}
         </main>
       </div>

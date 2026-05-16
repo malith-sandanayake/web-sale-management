@@ -12,7 +12,13 @@ export enum CustomerType {
 
 export enum SupplierCategory {
   INGREDIENT = 'INGREDIENT',
+  PRODUCT = 'PRODUCT',
   SERVICE = 'SERVICE'
+}
+
+export enum SupplierPaymentMethod {
+  CASH = 'CASH',
+  CREDIT = 'CREDIT'
 }
 
 export enum StockMovementType {
@@ -64,6 +70,8 @@ export interface Ingredient {
   currentUnitCost: number;
   currentStock: number;
   reorderLevel: number;
+  source?: 'IN_HOUSE' | 'SOURCED';
+  supplierId?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt?: string;
@@ -149,7 +157,8 @@ export interface Supplier {
   phone?: string;
   address?: string;
   category: SupplierCategory;
-  creditTermDays: number;
+  paymentMethod: SupplierPaymentMethod;
+  creditDays?: number;
   outstandingBalance: number;
   createdAt: string;
   updatedAt?: string;
