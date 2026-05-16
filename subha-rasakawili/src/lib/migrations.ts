@@ -2,10 +2,19 @@ import { collection, getDocs, updateDoc, doc, writeBatch, query, where } from 'f
 import { db } from './firebase';
 import { generateNextProductCode, generateNextIngredientCode, generateNextCustomerCode } from './utils';
 
+type CodeDoc = {
+  id: string;
+  productCode?: string;
+  ingredientCode?: string;
+  customerCode?: string;
+  currentStock?: number;
+  reorderLevel?: number;
+};
+
 export async function migrateProductCodes() {
   try {
     const productsSnap = await getDocs(collection(db, 'products'));
-    const allProducts = productsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const allProducts = productsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as CodeDoc[];
     
     // Find products without productCode
     const productsNeedingCodes = allProducts.filter(p => !p.productCode);
@@ -48,7 +57,7 @@ export async function migrateProductCodes() {
 export async function migrateIngredientCodes() {
   try {
     const ingredientsSnap = await getDocs(collection(db, 'ingredients'));
-    const allIngredients = ingredientsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const allIngredients = ingredientsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as CodeDoc[];
     
     const ingredientsNeedingCodes = allIngredients.filter(i => !i.ingredientCode);
     
@@ -91,7 +100,7 @@ export async function migrateIngredientCodes() {
 export async function migrateCustomerCodes() {
   try {
     const customersSnap = await getDocs(collection(db, 'customers'));
-    const allCustomers = customersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const allCustomers = customersSnap.docs.map(d => ({ id: d.id, ...d.data() })) as CodeDoc[];
     
     const customersNeedingCodes = allCustomers.filter(c => !c.customerCode);
     
@@ -128,5 +137,34 @@ export async function migrateCustomerCodes() {
   } catch (error) {
     console.error('Migration error:', error);
     throw new Error('Failed to migrate customer codes');
+  }
+}
+
+export async function migrateIngredientStockFields() {
+  try {
+    const ingredientsSnap = await getDocs(collection(db, 'ingredients'));
+    const allIngredients = ingredientsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as CodeDoc[];
+
+    const ingredientsNeedingUpdates = allIngredients.filter(i => i.currentStock === undefined || i.reorderLevel === undefined);
+
+    if (ingredientsNeedingUpdates.length === 0) {
+      console.log('All ingredients already have stock fields');
+      return { updated: 0, message: 'All ingredients already have stock fields' };
+    }
+
+    const batch = writeBatch(db);
+    ingredientsNeedingUpdates.forEach((ingredient) => {
+      batch.update(doc(db, 'ingredients', ingredient.id), {
+        currentStock: Number(ingredient.currentStock || 0),
+        reorderLevel: Number(ingredient.reorderLevel || 0),
+      });
+    });
+
+    await batch.commit();
+    console.log(`Successfully backfilled stock fields for ${ingredientsNeedingUpdates.length} ingredients`);
+    return { updated: ingredientsNeedingUpdates.length, message: `Backfilled stock fields for ${ingredientsNeedingUpdates.length} ingredients` };
+  } catch (error) {
+    console.error('Migration error:', error);
+    throw new Error('Failed to migrate ingredient stock fields');
   }
 }

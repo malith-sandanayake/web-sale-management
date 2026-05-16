@@ -4,7 +4,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { Toaster } from 'sonner';
 import { seedDatabase } from './lib/seed';
-import { migrateProductCodes, migrateIngredientCodes, migrateCustomerCodes } from './lib/migrations';
+import { migrateProductCodes, migrateIngredientCodes, migrateCustomerCodes, migrateIngredientStockFields } from './lib/migrations';
 
 // Layout
 import Sidebar from './components/layout/Sidebar';
@@ -24,8 +24,12 @@ import GeneralExpenses from './app/expenses/general/page';
 import Reports from './app/reports/page';
 import Profile from './app/profile/page';
 import ProductPerformance from './app/product-performance/page';
+import Suppliers from './app/suppliers/page';
+import Inventory from './app/inventory/page';
+import Accounts from './app/accounts/page';
+import type { ReactNode } from 'react';
 
-function ProtectedLayout({ children }: { children: React.ReactNode }) {
+function ProtectedLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex bg-slate-50 min-h-screen">
       <Sidebar />
@@ -52,6 +56,7 @@ export default function App() {
         migrateProductCodes().catch(console.error);
         migrateIngredientCodes().catch(console.error);
         migrateCustomerCodes().catch(console.error);
+        migrateIngredientStockFields().catch(console.error);
       }
     });
     return unsubscribe;
@@ -109,6 +114,18 @@ export default function App() {
         <Route 
           path="/expenses/general" 
           element={user ? <ProtectedLayout><GeneralExpenses /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/suppliers" 
+          element={user ? <ProtectedLayout><Suppliers /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/inventory" 
+          element={user ? <ProtectedLayout><Inventory /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/accounts" 
+          element={user ? <ProtectedLayout><Accounts /></ProtectedLayout> : <Navigate to="/login" replace />} 
         />
         <Route 
           path="/reports" 

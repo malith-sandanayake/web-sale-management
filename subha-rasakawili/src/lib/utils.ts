@@ -7,11 +7,12 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatLKR(amount: number | string) {
   const value = typeof amount === 'string' ? parseFloat(amount) : amount;
+  const normalized = Number.isFinite(value) ? value : 0;
   return new Intl.NumberFormat('en-LK', {
     style: 'currency',
     currency: 'LKR',
     minimumFractionDigits: 2,
-  }).format(value);
+  }).format(normalized);
 }
 
 export function generateReceiptNo() {
@@ -74,4 +75,21 @@ export function generateNextCustomerCode(existingCustomers: Array<{ customerCode
   
   const nextCode = codes.length > 0 ? codes[0] + 1 : 1;
   return 'C' + String(nextCode).padStart(3, '0');
+}
+
+export function generateNextSupplierCode(existingSuppliers: Array<{ supplierCode: string }>) {
+  if (!existingSuppliers || existingSuppliers.length === 0) {
+    return 'S001';
+  }
+
+  const codes = existingSuppliers
+    .map(s => {
+      const match = s.supplierCode.match(/\d+/);
+      return match ? parseInt(match[0], 10) : 0;
+    })
+    .filter(code => !isNaN(code))
+    .sort((a, b) => b - a);
+
+  const nextCode = codes.length > 0 ? codes[0] + 1 : 1;
+  return 'S' + String(nextCode).padStart(3, '0');
 }
