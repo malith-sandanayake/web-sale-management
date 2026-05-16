@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { collection, doc, getDocs, query, orderBy, runTransaction } from 'firebase/firestore';
+import { collection, doc, getDocs, query, orderBy, runTransaction, addDoc } from 'firebase/firestore';
 import { AlertTriangle, ArrowDown, ArrowUp, History, Plus, Search, Warehouse } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { Button } from '../../components/ui/button';
@@ -9,8 +9,8 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
-import { formatLKR } from '../../lib/utils';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
+import { formatLKR, generateNextIngredientCode } from '../../lib/utils';
 import { Ingredient, StockMovement, StockMovementType, StockReferenceType } from '../../types';
 import { toast } from 'sonner';
 
@@ -19,6 +19,13 @@ const emptyAdjustForm = {
   notes: '',
   movementType: StockMovementType.STOCK_IN,
   referenceType: StockReferenceType.ADJUSTMENT,
+};
+
+const emptyAddForm = {
+  name: '',
+  unit: '',
+  currentUnitCost: '',
+  reorderLevel: '',
 };
 
 export default function Inventory() {
@@ -31,6 +38,10 @@ export default function Inventory() {
   const [selectedIngredient, setSelectedIngredient] = useState<Ingredient | null>(null);
   const [adjustForm, setAdjustForm] = useState(emptyAdjustForm);
   const [isSaving, setIsSaving] = useState(false);
+
+    const [isAddIngredientOpen, setIsAddIngredientOpen] = useState(false);
+    const [addForm, setAddForm] = useState(emptyAddForm);
+    const [isAddingSaving, setIsAddingSaving] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -91,6 +102,37 @@ export default function Inventory() {
     setSelectedIngredient(ingredient);
     setIsHistoryOpen(true);
   };
+
+    const handleAddIngredient = async (e: FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      const nextCode = generateNextIngredientCode(ingredients);
+
+      if (!addForm.name.trim() || !addForm.unit.trim()) {
+        return toast.error('Ingredient name and unit are required');
+      }
+
+      setIsAddingSaving(true);
+      try {
+        await addDoc(collection(db, 'ingredients'), {
+          ingredientCode: nextCode,
+          name: addForm.name.trim(),
+          unit: addForm.unit.trim(),
+          currentUnitCost: parseFloat(addForm.currentUnitCost) || 0,
+          currentStock: 0,
+          reorderLevel: parseFloat(addForm.reorderLevel) || 0,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        });
+        toast.success('Ingredient added to inventory');
+        setIsAddIngredientOpen(false);
+        setAddForm(emptyAddForm);
+        fetchData();
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, 'ingredients');
+      } finally {
+        setIsAddingSaving(false);
+      }
+    };
 
   const handleAdjustStock = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -167,6 +209,39 @@ export default function Inventory() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Inventory</h1>
           <p className="text-slate-500 mt-1">Monitor stock levels and record inventory movements.</p>
         </div>
+         <Dialog open={isAddIngredientOpen} onOpenChange={setIsAddIngredientOpen}>
+           <DialogTrigger render={<Button className="bg-slate-900"><Plus className="w-4 h-4 mr-2" /> Add Ingredient</Button>} />
+           <DialogContent>
+             <form onSubmit={handleAddIngredient}>
+               <DialogHeader>
+                 <DialogTitle>Add New Ingredient</DialogTitle>
+                 <DialogDescription>Add a new ingredient to your inventory.</DialogDescription>
+               </DialogHeader>
+               <div className="grid gap-4 py-4">
+                 <div className="grid gap-2">
+                   <Label htmlFor="ingredient-name">Ingredient Name</Label>
+                   <Input id="ingredient-name" value={addForm.name} onChange={(e) => setAddForm((prev) => ({ ...prev, name: e.target.value }))} required placeholder="e.g. Rice" />
+                 </div>
+                 <div className="grid gap-2">
+                   <Label htmlFor="ingredient-unit">Unit</Label>
+                   <Input id="ingredient-unit" value={addForm.unit} onChange={(e) => setAddForm((prev) => ({ ...prev, unit: e.target.value }))} required placeholder="e.g. kg" />
+                 </div>
+                 <div className="grid gap-2">
+                   <Label htmlFor="ingredient-cost">Initial Unit Cost (LKR)</Label>
+                   <Input id="ingredient-cost" type="number" step="0.01" min="0" value={addForm.currentUnitCost} onChange={(e) => setAddForm((prev) => ({ ...prev, currentUnitCost: e.target.value }))} defaultValue="0" />
+                 </div>
+                 <div className="grid gap-2">
+                   <Label htmlFor="ingredient-reorder">Reorder Level</Label>
+                   <Input id="ingredient-reorder" type="number" step="0.01" min="0" value={addForm.reorderLevel} onChange={(e) => setAddForm((prev) => ({ ...prev, reorderLevel: e.target.value }))} defaultValue="0" />
+                 </div>
+               </div>
+               <DialogFooter>
+                 <Button type="button" variant="outline" onClick={() => setIsAddIngredientOpen(false)}>Cancel</Button>
+                 <Button type="submit" className="bg-slate-900" disabled={isAddingSaving}>{isAddingSaving ? 'Adding...' : 'Add Ingredient'}</Button>
+               </DialogFooter>
+             </form>
+           </DialogContent>
+         </Dialog>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

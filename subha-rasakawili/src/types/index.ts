@@ -16,6 +16,11 @@ export enum SupplierCategory {
   SERVICE = 'SERVICE'
 }
 
+export enum SupplierPaymentMethod {
+  CASH = 'CASH',
+  CREDIT = 'CREDIT'
+}
+
 export enum StockMovementType {
   STOCK_IN = 'STOCK_IN',
   STOCK_OUT = 'STOCK_OUT',
@@ -150,7 +155,8 @@ export interface Supplier {
   phone?: string;
   address?: string;
   category: SupplierCategory;
-  creditTermDays: number;
+  paymentMethod: SupplierPaymentMethod;
+  creditDays?: number;
   outstandingBalance: number;
   createdAt: string;
   updatedAt?: string;

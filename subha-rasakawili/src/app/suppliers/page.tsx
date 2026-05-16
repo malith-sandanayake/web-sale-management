@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
 import { formatLKR, generateNextSupplierCode } from '../../lib/utils';
-import { Supplier, SupplierCategory, SupplierTransaction } from '../../types';
+import { Supplier, SupplierCategory, SupplierPaymentMethod, SupplierTransaction } from '../../types';
 import { toast } from 'sonner';
 
 const emptyForm = {
@@ -19,7 +19,8 @@ const emptyForm = {
   phone: '',
   address: '',
   category: '',
-  creditTermDays: '30',
+  paymentMethod: SupplierPaymentMethod.CASH,
+  creditDays: '',
 };
 
 export default function Suppliers() {
@@ -39,6 +40,7 @@ export default function Suppliers() {
   const [editForm, setEditForm] = useState(emptyForm);
   const [addFormCategory, setAddFormCategory] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<SupplierCategory>(SupplierCategory.INGREDIENT);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<SupplierPaymentMethod>(SupplierPaymentMethod.CASH);
 
   useEffect(() => {
     fetchData();
@@ -80,7 +82,8 @@ export default function Suppliers() {
       phone: supplier.phone || '',
       address: supplier.address || '',
       category: supplier.category || '',
-      creditTermDays: String(supplier.creditTermDays ?? 30),
+      paymentMethod: supplier.paymentMethod || SupplierPaymentMethod.CASH,
+      creditDays: String(supplier.creditDays ?? ''),
     });
     setIsEditOpen(true);
   };
@@ -108,7 +111,8 @@ export default function Suppliers() {
         phone: String(formData.get('phone') || '').trim(),
         address: String(formData.get('address') || '').trim(),
         category: selectedCategory,
-        creditTermDays: Number(formData.get('creditTermDays') || 30),
+        paymentMethod: selectedPaymentMethod,
+        creditDays: selectedPaymentMethod === SupplierPaymentMethod.CREDIT ? Number(formData.get('creditDays') || 30) : null,
         outstandingBalance: 0,
         createdAt: new Date().toISOString(),
       });
@@ -133,7 +137,8 @@ export default function Suppliers() {
         phone: editForm.phone.trim(),
         address: editForm.address.trim(),
         category: editForm.category,
-        creditTermDays: Number(editForm.creditTermDays || 30),
+        paymentMethod: editForm.paymentMethod,
+        creditDays: editForm.paymentMethod === SupplierPaymentMethod.CREDIT ? Number(editForm.creditDays || 30) : null,
         updatedAt: new Date().toISOString(),
       });
       toast.success('Supplier updated successfully');
@@ -223,7 +228,7 @@ export default function Suppliers() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Suppliers</h1>
           <p className="text-slate-500 mt-1">Manage supplier accounts, payments, and running balances.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={(open) => { setIsAddOpen(open); if (!open) setSelectedCategory(SupplierCategory.INGREDIENT); }}>
+        <Dialog open={isAddOpen} onOpenChange={(open) => { setIsAddOpen(open); if (!open) { setSelectedCategory(SupplierCategory.INGREDIENT); setSelectedPaymentMethod(SupplierPaymentMethod.CASH); } }}>
           <DialogTrigger render={<Button className="bg-slate-900"><Plus className="w-4 h-4 mr-2" /> Add Supplier</Button>} />
           <DialogContent>
             <form onSubmit={handleAddSupplier}>
@@ -257,9 +262,22 @@ export default function Suppliers() {
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="creditTermDays">Credit Term Days</Label>
-                    <Input id="creditTermDays" name="creditTermDays" type="number" min="0" defaultValue="30" />
+                    <Label>Payment Method</Label>
+                    <Select value={selectedPaymentMethod} onValueChange={(value) => setSelectedPaymentMethod(value as SupplierPaymentMethod)}>
+                      <SelectTrigger><SelectValue placeholder="Select payment method" /></SelectTrigger>
+                      <SelectContent>
+                        {Object.values(SupplierPaymentMethod).map((method) => (
+                          <SelectItem key={method} value={method}>{method}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
+                  {selectedPaymentMethod === SupplierPaymentMethod.CREDIT && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="creditDays">Credit Days</Label>
+                      <Input id="creditDays" name="creditDays" type="number" min="1" defaultValue="30" />
+                    </div>
+                  )}
                 </div>
               </div>
               <DialogFooter>
@@ -303,9 +321,22 @@ export default function Suppliers() {
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="edit-creditTermDays">Credit Term Days</Label>
-                    <Input id="edit-creditTermDays" type="number" min="0" value={editForm.creditTermDays} onChange={(e) => setEditForm((prev) => ({ ...prev, creditTermDays: e.target.value }))} />
+                    <Label>Payment Method</Label>
+                    <Select value={editForm.paymentMethod} onValueChange={(value) => setEditForm((prev) => ({ ...prev, paymentMethod: value as SupplierPaymentMethod }))}>
+                      <SelectTrigger><SelectValue placeholder="Select payment method" /></SelectTrigger>
+                      <SelectContent>
+                        {Object.values(SupplierPaymentMethod).map((method) => (
+                          <SelectItem key={method} value={method}>{method}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
+                  {editForm.paymentMethod === SupplierPaymentMethod.CREDIT && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-creditDays">Credit Days</Label>
+                      <Input id="edit-creditDays" type="number" min="1" value={editForm.creditDays} onChange={(e) => setEditForm((prev) => ({ ...prev, creditDays: e.target.value }))} />
+                    </div>
+                  )}
                 </div>
               </div>
               <DialogFooter>
@@ -358,8 +389,8 @@ export default function Suppliers() {
                   </Card>
                   <Card className="border-slate-100 shadow-sm">
                     <CardContent className="p-4">
-                      <p className="text-xs uppercase tracking-widest text-slate-400 font-bold">Credit Term</p>
-                      <p className="text-2xl font-black text-slate-900 mt-1">{selectedSupplier.creditTermDays || 0} Days</p>
+                      <p className="text-xs uppercase tracking-widest text-slate-400 font-bold">Payment Method</p>
+                      <p className="text-2xl font-black text-slate-900 mt-1">{selectedSupplier.paymentMethod}{selectedSupplier.paymentMethod === 'CREDIT' && selectedSupplier.creditDays ? ` (${selectedSupplier.creditDays}d)` : ''}</p>
                     </CardContent>
                   </Card>
                   <Card className="border-slate-100 shadow-sm">
@@ -430,7 +461,7 @@ export default function Suppliers() {
                 <TableHead className="font-semibold px-6">Supplier Name</TableHead>
                 <TableHead className="font-semibold">Category</TableHead>
                 <TableHead className="font-semibold">Contact</TableHead>
-                <TableHead className="font-semibold">Credit Term</TableHead>
+                <TableHead className="font-semibold">Payment</TableHead>
                 <TableHead className="font-semibold">Outstanding</TableHead>
                 <TableHead className="text-right font-semibold pr-6">Actions</TableHead>
               </TableRow>
@@ -462,7 +493,9 @@ export default function Suppliers() {
                       <div className="flex items-center gap-2"><MapPin className="w-3 h-3" />{supplier.address || 'N/A'}</div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-slate-500">{supplier.creditTermDays || 0} days</TableCell>
+                   <TableCell>
+                     <Badge variant={supplier.paymentMethod === 'CREDIT' ? 'default' : 'secondary'}>{supplier.paymentMethod}{supplier.paymentMethod === 'CREDIT' && supplier.creditDays ? ` (${supplier.creditDays}d)` : ''}</Badge>
+                   </TableCell>
                   <TableCell className="font-bold text-slate-900">{formatLKR(supplier.outstandingBalance || 0)}</TableCell>
                   <TableCell className="text-right pr-6">
                     <div className="flex justify-end gap-2">
