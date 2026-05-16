@@ -76,6 +76,21 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // Suppliers
+    match /suppliers/{supplierId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Supplier Transactions
+    match /supplier_transactions/{transactionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Stock Movements
+    match /stock_movements/{movementId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Admins
     match /admins/{adminId} {
       allow read, write: if isSignedIn();

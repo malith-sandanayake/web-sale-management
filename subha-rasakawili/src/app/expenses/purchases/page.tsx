@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, query, orderBy, updateDoc, doc } from 'firebase/firestore';
+import { useState, useEffect, type FormEvent } from 'react';
+import { collection, getDocs, query, orderBy, updateDoc, doc, runTransaction } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../../lib/firebase';
 import { Plus, ShoppingCart, Calendar, Search, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../../../components/ui/card';
@@ -11,13 +11,16 @@ import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { formatLKR } from '../../../lib/utils';
 import { toast } from 'sonner';
+import { Supplier, StockMovementType, StockReferenceType } from '../../../types';
 
 export default function Purchases() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [ingredients, setIngredients] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [selectedIngredient, setSelectedIngredient] = useState<string>("");
+  const [selectedSupplier, setSelectedSupplier] = useState<string>("");
 
   useEffect(() => {
     fetchData();
@@ -26,9 +29,10 @@ export default function Purchases() {
   async function fetchData() {
     try {
       const q = query(collection(db, 'expense_purchases'), orderBy('purchaseDate', 'desc'));
-      const [pSnap, iSnap] = await Promise.all([
+      const [pSnap, iSnap, sSnap] = await Promise.all([
         getDocs(q),
-        getDocs(collection(db, 'ingredients'))
+        getDocs(collection(db, 'ingredients')),
+        getDocs(collection(db, 'suppliers'))
       ]);
       
       const ingMap = iSnap.docs.reduce((acc: any, d) => {
@@ -37,6 +41,7 @@ export default function Purchases() {
       }, {});
 
       setIngredients(iSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setSuppliers(sSnap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier)));
       setPurchases(pSnap.docs.map(d => ({ 
         id: d.id, 
         ...d.data(),
@@ -49,31 +54,95 @@ export default function Purchases() {
     }
   }
 
-  const handleAddPurchase = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleAddPurchase = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const ingredientId = formData.get('ingredientId') as string;
     const quantity = parseFloat(formData.get('quantity') as string);
     const unitRate = parseFloat(formData.get('unitRate') as string);
     const totalAmount = quantity * unitRate;
-
-    const data = {
-      ingredientId,
-      purchaseDate: new Date().toISOString(),
-      quantity,
-      unitRate,
-      totalAmount,
-      supplier: formData.get('supplier') as string,
-      notes: formData.get('notes') as string
-    };
+    const supplierId = selectedSupplier || undefined;
+    const notes = formData.get('notes') as string;
+    const purchaseId = doc(collection(db, 'expense_purchases')).id;
+    const createdAt = new Date().toISOString();
 
     try {
-      await addDoc(collection(db, 'expense_purchases'), data);
-      // Update ingredient current cost
-      await updateDoc(doc(db, 'ingredients', ingredientId), { currentUnitCost: unitRate });
-      
-      toast.success("Purchase recorded and unit cost updated!");
+      await runTransaction(db, async (transaction) => {
+        const ingredientRef = doc(db, 'ingredients', ingredientId);
+        const ingredientSnap = await transaction.get(ingredientRef);
+        if (!ingredientSnap.exists()) {
+          throw new Error('Ingredient not found');
+        }
+
+        const ingredientData = ingredientSnap.data() as any;
+        const currentStock = Number(ingredientData.currentStock || 0);
+        const newStockBalance = currentStock + quantity;
+
+        transaction.set(doc(db, 'expense_purchases', purchaseId), {
+          ingredientId,
+          supplierId: supplierId || null,
+          purchaseDate: createdAt,
+          quantity,
+          unitRate,
+          totalAmount,
+          notes,
+          createdAt,
+        });
+
+        transaction.update(ingredientRef, {
+          currentUnitCost: unitRate,
+          currentStock: newStockBalance,
+          updatedAt: createdAt,
+        });
+
+        const stockMovementId = doc(collection(db, 'stock_movements')).id;
+        transaction.set(doc(db, 'stock_movements', stockMovementId), {
+          ingredientId,
+          movementType: StockMovementType.STOCK_IN,
+          quantity,
+          unitCost: unitRate,
+          totalValue: totalAmount,
+          referenceType: StockReferenceType.PURCHASE,
+          referenceId: purchaseId,
+          notes,
+          balanceAfter: newStockBalance,
+          createdAt,
+        });
+
+        if (supplierId) {
+          const supplierRef = doc(db, 'suppliers', supplierId);
+          const supplierSnap = await transaction.get(supplierRef);
+          if (!supplierSnap.exists()) {
+            throw new Error('Supplier not found');
+          }
+
+          const supplierData = supplierSnap.data() as any;
+          const balanceBefore = Number(supplierData.outstandingBalance || 0);
+          const balanceAfter = balanceBefore + totalAmount;
+
+          transaction.update(supplierRef, {
+            outstandingBalance: balanceAfter,
+            updatedAt: createdAt,
+          });
+
+          const supplierTransactionId = doc(collection(db, 'supplier_transactions')).id;
+          transaction.set(doc(db, 'supplier_transactions', supplierTransactionId), {
+            supplierId,
+            type: 'PURCHASE',
+            referenceId: purchaseId,
+            amount: totalAmount,
+            balanceBefore,
+            balanceAfter,
+            notes: notes || `Purchase of ${quantity} units`,
+            createdAt,
+          });
+        }
+      });
+
+      toast.success("Purchase recorded successfully");
       setIsAddOpen(false);
+      setSelectedIngredient("");
+      setSelectedSupplier("");
       fetchData();
     } catch (e) {
       handleFirestoreError(e, OperationType.CREATE, 'purchases');
@@ -103,7 +172,7 @@ export default function Purchases() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Material Purchases</h1>
           <p className="text-slate-500 mt-1">Track raw material stock-ins and costs.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={(open) => { setIsAddOpen(open); if (!open) setSelectedIngredient(""); }}>
+        <Dialog open={isAddOpen} onOpenChange={(open) => { setIsAddOpen(open); if (!open) { setSelectedIngredient(""); setSelectedSupplier(""); } }}>
           <DialogTrigger render={<Button className="bg-slate-900"><Plus className="w-4 h-4 mr-2" /> New Purchase</Button>} />
           <DialogContent>
             <form onSubmit={handleAddPurchase}>
@@ -127,6 +196,19 @@ export default function Purchases() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="grid gap-2">
+                  <Label>Supplier (Optional)</Label>
+                  <Select name="supplierId" value={selectedSupplier} onValueChange={(val) => setSelectedSupplier(val)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select supplier" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {suppliers.map(supplier => (
+                        <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="quantity">Quantity</Label>
@@ -138,8 +220,8 @@ export default function Purchases() {
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="supplier">Supplier</Label>
-                  <Input id="supplier" name="supplier" placeholder="e.g. Arpico Wholesale" />
+                  <Label htmlFor="notes">Notes</Label>
+                  <Input id="notes" name="notes" placeholder="Optional notes" />
                 </div>
               </div>
               <DialogFooter>

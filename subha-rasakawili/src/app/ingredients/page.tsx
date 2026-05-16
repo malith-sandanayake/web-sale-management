@@ -48,6 +48,8 @@ export default function Ingredients() {
       name: formData.get('name') as string,
       unit: formData.get('unit') as string,
       currentUnitCost: parseFloat(formData.get('cost') as string || '0'),
+      currentStock: 0,
+      reorderLevel: 0,
       isActive: true,
       createdAt: new Date().toISOString()
     };

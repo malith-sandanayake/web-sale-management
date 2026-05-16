@@ -53,7 +53,7 @@ export async function seedDatabase() {
 
   INITIAL_INGREDIENTS.forEach(ing => {
     const d = doc(collection(db, 'ingredients'));
-    batch.set(d, { ...ing, unit: 'kg', currentUnitCost: 0, isActive: true, createdAt: new Date().toISOString() });
+    batch.set(d, { ...ing, unit: 'kg', currentUnitCost: 0, currentStock: 0, reorderLevel: 0, isActive: true, createdAt: new Date().toISOString() });
   });
 
   INITIAL_CUSTOMERS.forEach(c => {

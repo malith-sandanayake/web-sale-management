@@ -4,7 +4,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { Toaster } from 'sonner';
 import { seedDatabase } from './lib/seed';
-import { migrateProductCodes, migrateIngredientCodes, migrateCustomerCodes } from './lib/migrations';
+import { migrateProductCodes, migrateIngredientCodes, migrateCustomerCodes, migrateIngredientStockFields, migrateAccountingLedgers } from './lib/migrations';
 
 // Layout
 import Sidebar from './components/layout/Sidebar';
@@ -24,14 +24,18 @@ import GeneralExpenses from './app/expenses/general/page';
 import Reports from './app/reports/page';
 import Profile from './app/profile/page';
 import ProductPerformance from './app/product-performance/page';
+import Suppliers from './app/suppliers/page';
+import Inventory from './app/inventory/page';
+import Accounts from './app/accounts/page';
+import type { ReactNode } from 'react';
 
-function ProtectedLayout({ children }: { children: React.ReactNode }) {
+function ProtectedLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex bg-slate-50 min-h-screen">
+    <div className="flex bg-slate-50 min-h-dvh overflow-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <Topbar />
-        <main className="flex-1 p-8 overflow-auto">
+        <main className="flex-1 p-8 overflow-auto min-h-0">
           {children}
         </main>
       </div>
@@ -52,6 +56,8 @@ export default function App() {
         migrateProductCodes().catch(console.error);
         migrateIngredientCodes().catch(console.error);
         migrateCustomerCodes().catch(console.error);
+        migrateIngredientStockFields().catch(console.error);
+        migrateAccountingLedgers().catch(console.error);
       }
     });
     return unsubscribe;
@@ -59,7 +65,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-dvh w-screen flex items-center justify-center bg-slate-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
       </div>
     );
@@ -109,6 +115,18 @@ export default function App() {
         <Route 
           path="/expenses/general" 
           element={user ? <ProtectedLayout><GeneralExpenses /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/suppliers" 
+          element={user ? <ProtectedLayout><Suppliers /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/inventory" 
+          element={user ? <ProtectedLayout><Inventory /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/accounts" 
+          element={user ? <ProtectedLayout><Accounts /></ProtectedLayout> : <Navigate to="/login" replace />} 
         />
         <Route 
           path="/reports" 

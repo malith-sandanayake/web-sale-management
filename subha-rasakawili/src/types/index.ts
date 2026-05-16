@@ -10,6 +10,24 @@ export enum CustomerType {
   RETAIL = 'RETAIL'
 }
 
+export enum SupplierCategory {
+  INGREDIENT = 'INGREDIENT',
+  SERVICE = 'SERVICE'
+}
+
+export enum StockMovementType {
+  STOCK_IN = 'STOCK_IN',
+  STOCK_OUT = 'STOCK_OUT',
+  ADJUSTMENT = 'ADJUSTMENT'
+}
+
+export enum StockReferenceType {
+  PURCHASE = 'PURCHASE',
+  PRODUCTION = 'PRODUCTION',
+  ADJUSTMENT = 'ADJUSTMENT',
+  WASTE = 'WASTE'
+}
+
 export enum PaymentType {
   CASH = 'CASH'
 }
@@ -44,8 +62,11 @@ export interface Ingredient {
   name: string;
   unit: string;
   currentUnitCost: number;
+  currentStock: number;
+  reorderLevel: number;
   isActive: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface ProductRecipe {
@@ -73,6 +94,8 @@ export interface Receipt {
   totalAmount: number;
   notes?: string;
   createdAt: string;
+  isReversed?: boolean;
+  reversedAt?: string;
 }
 
 export interface ReceiptItem {
@@ -102,8 +125,12 @@ export interface ExpensePurchase {
   quantity: number;
   unitRate: number;
   totalAmount: number;
+  supplierId?: string;
   supplier?: string;
   notes?: string;
+  isReversed?: boolean;
+  reversedAt?: string;
+  createdAt?: string;
 }
 
 export interface ExpenseGeneral {
@@ -113,6 +140,45 @@ export interface ExpenseGeneral {
   description?: string;
   amount: number;
   notes?: string;
+}
+
+export interface Supplier {
+  id: string;
+  supplierCode: string;
+  name: string;
+  phone?: string;
+  address?: string;
+  category: SupplierCategory;
+  creditTermDays: number;
+  outstandingBalance: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SupplierTransaction {
+  id: string;
+  supplierId: string;
+  type: 'PURCHASE' | 'PAYMENT';
+  referenceId?: string;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface StockMovement {
+  id: string;
+  ingredientId: string;
+  movementType: StockMovementType;
+  quantity: number;
+  unitCost: number;
+  totalValue: number;
+  referenceType: StockReferenceType;
+  referenceId?: string;
+  notes?: string;
+  balanceAfter: number;
+  createdAt: string;
 }
 
 export interface User {
