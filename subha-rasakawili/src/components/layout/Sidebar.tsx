@@ -61,7 +61,7 @@ export default function Sidebar() {
         </p>
       </div>
 
-      <nav className="flex-1 min-h-0 overflow-y-auto px-4 py-2 space-y-3">
+      <nav className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 py-2 space-y-3">
         <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">
           Main
         </div>
