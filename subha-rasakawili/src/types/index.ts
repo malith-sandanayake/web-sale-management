@@ -5,9 +5,22 @@ export enum UnitType {
   PACKET = 'PACKET'
 }
 
+export interface ProductAttribute {
+  key: string;
+  value: string;
+}
+
+export enum ProductCategory {
+  FOOD = 'FOOD',
+  BEVERAGE = 'BEVERAGE',
+  PACKAGING = 'PACKAGING',
+  OTHER = 'OTHER'
+}
+
 export enum CustomerType {
   WHOLESALE = 'WHOLESALE',
-  RETAIL = 'RETAIL'
+  RETAIL = 'RETAIL',
+  DEALER = 'DEALER'
 }
 
 export enum SupplierCategory {
@@ -29,13 +42,22 @@ export enum StockMovementType {
 
 export enum StockReferenceType {
   PURCHASE = 'PURCHASE',
+  SALE = 'SALE',
   PRODUCTION = 'PRODUCTION',
   ADJUSTMENT = 'ADJUSTMENT',
-  WASTE = 'WASTE'
+  WASTE = 'WASTE',
+  RETURN = 'RETURN'
 }
 
 export enum PaymentType {
-  CASH = 'CASH'
+  CASH = 'CASH',
+  CARD = 'CARD',
+  CREDIT = 'CREDIT'
+}
+
+export enum ReturnType {
+  SALE_RETURN = 'SALE_RETURN',
+  PURCHASE_RETURN = 'PURCHASE_RETURN'
 }
 
 export enum ExpenseCategory {
@@ -57,6 +79,12 @@ export interface Product {
   unitType: UnitType;
   wholesalePrice: number;
   retailPrice: number;
+  category?: ProductCategory;
+  brandName?: string;
+  attributes?: ProductAttribute[];
+  lowStockThreshold?: number;
+  dealerPrice?: number;
+  profitMarginPercentage?: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -91,6 +119,7 @@ export interface Customer {
   name: string;
   customerType: CustomerType;
   phone?: string;
+  outstandingBalance?: number;
   createdAt: string;
 }
 
@@ -138,6 +167,8 @@ export interface ExpensePurchase {
   notes?: string;
   isReversed?: boolean;
   reversedAt?: string;
+  hasReturn?: boolean;
+  returnedAt?: string;
   createdAt?: string;
 }
 
@@ -176,9 +207,44 @@ export interface SupplierTransaction {
   createdAt: string;
 }
 
+export interface DueLedgerEntry {
+  id: string;
+  tenantReceiptId: string;
+  customerId?: string;
+  supplierId?: string;
+  partyType: 'CUSTOMER' | 'SUPPLIER';
+  originalAmount: number;
+  paidAmount: number;
+  dueAmount: number;
+  status: 'OPEN' | 'PARTIAL' | 'CLEARED';
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface DuePayment {
+  id: string;
+  dueLedgerEntryId: string;
+  amount: number;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ReturnEntry {
+  id: string;
+  returnType: ReturnType;
+  originalReceiptId?: string;
+  originalPurchaseId?: string;
+  partyId: string;
+  items: Array<{ productId: string; ingredientId?: string; quantity: number; unitPrice: number; subtotal: number; }>;
+  totalAmount: number;
+  reason?: string;
+  createdAt: string;
+}
+
 export interface StockMovement {
   id: string;
-  ingredientId: string;
+  ingredientId?: string;
+  productId?: string;
   movementType: StockMovementType;
   quantity: number;
   unitCost: number;

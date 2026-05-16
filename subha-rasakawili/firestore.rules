@@ -91,6 +91,21 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // Due Ledger
+    match /due_ledger/{entryId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Due Payments
+    match /due_payments/{paymentId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Returns
+    match /returns/{returnId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Admins
     match /admins/{adminId} {
       allow read, write: if isSignedIn();

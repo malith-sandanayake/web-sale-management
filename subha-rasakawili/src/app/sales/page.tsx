@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, orderBy, doc, getDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, doc, getDoc, updateDoc, where, runTransaction } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
-import { Search, Filter, Receipt as ReceiptIcon, Eye, Download, Calendar, Trash2 } from 'lucide-react';
+import { Search, Filter, Receipt as ReceiptIcon, Eye, Download, Calendar, Trash2, Printer, Undo2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -9,8 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from '../../components/ui/badge';
 import { formatLKR } from '../../lib/utils';
 import { Link } from 'react-router-dom';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
+import { Label } from '../../components/ui/label';
+import { StockMovementType, StockReferenceType, ReturnType } from '../../types';
 import { toast } from 'sonner';
+import { exportToCSV, exportToExcel, printTable } from '../../lib/exportUtils';
 
 export default function SalesList() {
   const [sales, setSales] = useState<any[]>([]);
@@ -18,6 +21,8 @@ export default function SalesList() {
   const [search, setSearch] = useState("");
   const [selectedSale, setSelectedSale] = useState<any>(null);
   const [saleItems, setSaleItems] = useState<any[]>([]);
+  const [returnSale, setReturnSale] = useState<any>(null);
+  const [returnItems, setReturnItems] = useState<any[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
 
   useEffect(() => {
@@ -92,10 +97,101 @@ export default function SalesList() {
     }
   };
 
+  const openReturnDialog = async (sale: any) => {
+    setReturnSale(sale);
+    setItemsLoading(true);
+    try {
+      const q = query(collection(db, 'receipt_items'), where('receiptId', '==', sale.id));
+      const snap = await getDocs(q);
+      const itemsData = await Promise.all(snap.docs.map(async (d) => {
+        const data = d.data();
+        const productSnap = await getDoc(doc(db, 'products', data.productId));
+        return {
+          id: d.id,
+          ...data,
+          productName: productSnap.exists() ? productSnap.data().name : 'Unknown Product',
+          returnQuantity: data.quantity,
+        };
+      }));
+      setReturnItems(itemsData);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.LIST, 'receipt_items');
+    } finally {
+      setItemsLoading(false);
+    }
+  };
+
+  const processSaleReturn = async () => {
+    if (!returnSale) return;
+    const itemsToReturn = returnItems
+      .map((item) => ({ ...item, returnQuantity: Number(item.returnQuantity || 0) }))
+      .filter((item) => item.returnQuantity > 0);
+    if (itemsToReturn.length === 0) return toast.error('Enter at least one return quantity');
+
+    const createdAt = new Date().toISOString();
+    try {
+      await runTransaction(db, async (transaction) => {
+        const returnId = doc(collection(db, 'returns')).id;
+        const totalAmount = itemsToReturn.reduce((sum, item) => sum + item.returnQuantity * Number(item.unitPrice || 0), 0);
+
+        transaction.set(doc(db, 'returns', returnId), {
+          returnType: ReturnType.SALE_RETURN,
+          originalReceiptId: returnSale.id,
+          partyId: returnSale.customerId,
+          items: itemsToReturn.map((item) => ({
+            productId: item.productId,
+            quantity: item.returnQuantity,
+            unitPrice: item.unitPrice,
+            subtotal: item.returnQuantity * Number(item.unitPrice || 0),
+          })),
+          totalAmount,
+          createdAt,
+        });
+
+        itemsToReturn.forEach((item) => {
+          const movementId = doc(collection(db, 'stock_movements')).id;
+          transaction.set(doc(db, 'stock_movements', movementId), {
+            productId: item.productId,
+            movementType: StockMovementType.STOCK_IN,
+            quantity: item.returnQuantity,
+            unitCost: item.unitPrice,
+            totalValue: item.returnQuantity * Number(item.unitPrice || 0),
+            referenceType: StockReferenceType.RETURN,
+            referenceId: returnId,
+            notes: `Return for ${returnSale.receiptNumber}`,
+            balanceAfter: null,
+            createdAt,
+          });
+        });
+
+        transaction.update(doc(db, 'receipts', returnSale.id), {
+          hasReturn: true,
+          returnedAt: createdAt,
+        });
+      });
+
+      toast.success('Sale return processed');
+      setReturnSale(null);
+      setReturnItems([]);
+      fetchSales();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'returns');
+    }
+  };
+
   const filtered = sales.filter(s => 
     s.receiptNumber.toLowerCase().includes(search.toLowerCase()) || 
     s.customerName.toLowerCase().includes(search.toLowerCase())
   );
+
+  const exportRows = filtered.map((sale) => ({
+    receiptNumber: sale.receiptNumber,
+    date: sale.saleDate,
+    customer: sale.customerName,
+    type: sale.customerType,
+    totalAmount: sale.totalAmount,
+    status: sale.isReversed ? 'Reversed' : sale.hasReturn ? 'Returned' : 'Active',
+  }));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -107,7 +203,13 @@ export default function SalesList() {
         <Button size="sm" className="bg-slate-900" render={<Link to="/sales/new">New Sale</Link>} />
       </div>
 
-      <Card className="border-none shadow-sm overflow-hidden">
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={() => exportToCSV(exportRows, 'sales.csv')}><Download className="w-4 h-4 mr-2" /> CSV</Button>
+        <Button variant="outline" size="sm" onClick={() => exportToExcel(exportRows, 'sales.xlsx')}><Download className="w-4 h-4 mr-2" /> Excel</Button>
+        <Button variant="outline" size="sm" onClick={() => printTable('sales-table')}><Printer className="w-4 h-4 mr-2" /> Print</Button>
+      </div>
+
+      <Card id="sales-table" className="border-none shadow-sm overflow-hidden">
         <CardHeader className="pb-3 border-b flex flex-row items-center justify-between space-y-0">
           <div className="relative max-w-sm w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -170,9 +272,16 @@ export default function SalesList() {
                         <Eye className="w-4 h-4" />
                       </Button>
                       {!sale.isReversed ? (
-                        <Button variant="ghost" size="icon" onClick={() => reverseSale(sale.id)}>
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </Button>
+                        <>
+                          {!sale.hasReturn && (
+                            <Button variant="ghost" size="icon" onClick={() => openReturnDialog(sale)} title="Process return">
+                              <Undo2 className="w-4 h-4 text-amber-600" />
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="icon" onClick={() => reverseSale(sale.id)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        </>
                       ) : (
                         <Badge variant="outline" className="uppercase text-xs px-2 py-1">Reversed</Badge>
                       )}
@@ -268,6 +377,34 @@ export default function SalesList() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!returnSale} onOpenChange={(open) => !open && setReturnSale(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Process Sale Return</DialogTitle>
+            <DialogDescription>{returnSale ? `Return items from ${returnSale.receiptNumber}.` : 'Return sale items.'}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {itemsLoading ? (
+              <div className="h-24 animate-pulse rounded bg-slate-100" />
+            ) : (
+              returnItems.map((item, index) => (
+                <div key={item.id} className="grid grid-cols-[1fr_140px] items-end gap-3">
+                  <div>
+                    <Label>{item.productName}</Label>
+                    <p className="text-xs text-slate-500">Original quantity: {item.quantity}</p>
+                  </div>
+                  <Input type="number" min="0" max={item.quantity} step="0.01" value={item.returnQuantity} onChange={(event) => setReturnItems((prev) => prev.map((row, rowIndex) => rowIndex === index ? { ...row, returnQuantity: event.target.value } : row))} />
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReturnSale(null)}>Cancel</Button>
+            <Button className="bg-slate-900" onClick={processSaleReturn}>Confirm Return</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

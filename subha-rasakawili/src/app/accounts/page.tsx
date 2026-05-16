@@ -9,7 +9,7 @@ import { Card, CardContent } from '../../components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
-import { ExpenseCategory, Ingredient, Receipt, ExpensePurchase, ExpenseGeneral, Supplier, StockMovement, SupplierTransaction } from '../../types';
+import { DueLedgerEntry, ExpenseCategory, Ingredient, Receipt, ExpensePurchase, ExpenseGeneral, Supplier, StockMovement, SupplierTransaction } from '../../types';
 import { cn, formatLKR } from '../../lib/utils';
 import { toast } from 'sonner';
 
@@ -63,6 +63,7 @@ export default function Accounts() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [supplierTransactions, setSupplierTransactions] = useState<SupplierTransaction[]>([]);
+  const [dueLedgerEntries, setDueLedgerEntries] = useState<DueLedgerEntry[]>([]);
   const [period, setPeriod] = useState<Period>('ALL_TIME');
   const [activeTab, setActiveTab] = useState<TabKey>('income');
   const [loading, setLoading] = useState(true);
@@ -74,7 +75,7 @@ export default function Accounts() {
 
   async function fetchData() {
     try {
-      const [receiptSnap, purchaseSnap, expenseSnap, ingredientSnap, supplierSnap, stockMovementSnap, supplierTransactionSnap] = await Promise.all([
+      const [receiptSnap, purchaseSnap, expenseSnap, ingredientSnap, supplierSnap, stockMovementSnap, supplierTransactionSnap, dueLedgerSnap] = await Promise.all([
         getDocs(collection(db, 'receipts')),
         getDocs(collection(db, 'expense_purchases')),
         getDocs(collection(db, 'expense_general')),
@@ -82,6 +83,7 @@ export default function Accounts() {
         getDocs(collection(db, 'suppliers')),
         getDocs(collection(db, 'stock_movements')),
         getDocs(collection(db, 'supplier_transactions')),
+        getDocs(collection(db, 'due_ledger')),
       ]);
 
       setReceipts(receiptSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Receipt)));
@@ -91,6 +93,7 @@ export default function Accounts() {
       setSuppliers(supplierSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Supplier)));
       setStockMovements(stockMovementSnap.docs.map((d) => ({ id: d.id, ...d.data() } as StockMovement)));
       setSupplierTransactions(supplierTransactionSnap.docs.map((d) => ({ id: d.id, ...d.data() } as SupplierTransaction)));
+      setDueLedgerEntries(dueLedgerSnap.docs.map((d) => ({ id: d.id, ...d.data() } as DueLedgerEntry)));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'accounts');
     } finally {
@@ -171,13 +174,19 @@ export default function Accounts() {
       return currentStock * currentUnitCost;
     }));
     const cashReceivables = totalSalesToDate;
-    const totalAssets = inventoryValue + cashReceivables;
+    const customerReceivables = sum(dueLedgerEntries
+      .filter((entry) => entry.partyType === 'CUSTOMER' && entry.status !== 'CLEARED')
+      .map((entry) => Number(entry.dueAmount || 0)));
+    const totalAssets = inventoryValue + cashReceivables + customerReceivables;
     const supplierPayables = sum(suppliers.map((supplier) => {
       const balanceFromLedger = latestSupplierBalanceBySupplier[supplier.id]?.balanceAfter;
       const balanceFromPurchases = supplierPurchaseBalances[supplier.id] || 0;
       return Number(balanceFromLedger ?? supplier.outstandingBalance ?? balanceFromPurchases ?? 0);
     }));
-    const totalLiabilities = supplierPayables;
+    const supplierPayablesDue = sum(dueLedgerEntries
+      .filter((entry) => entry.partyType === 'SUPPLIER' && entry.status !== 'CLEARED')
+      .map((entry) => Number(entry.dueAmount || 0)));
+    const totalLiabilities = supplierPayables + supplierPayablesDue;
     const retainedEarnings = totalAssets - totalLiabilities;
 
     const allTimeCogs = sum(validPurchases.map((purchase) => Number(purchase.totalAmount || 0)));
@@ -222,15 +231,17 @@ export default function Accounts() {
       netMargin,
       inventoryValue,
       cashReceivables,
+      customerReceivables,
       totalAssets,
       supplierPayables,
+      supplierPayablesDue,
       totalLiabilities,
       retainedEarnings,
       trialRows,
       debitTotal,
       creditTotal,
     };
-  }, [receipts, purchases, expenses, ingredients, suppliers, period]);
+  }, [receipts, purchases, expenses, ingredients, suppliers, stockMovements, supplierTransactions, dueLedgerEntries, period]);
 
   const exportPDF = async () => {
     if (!statementRef.current) return;
@@ -346,6 +357,7 @@ export default function Accounts() {
                   <TableBody>
                     <ValueRow label="Inventory Asset" value={accounting.inventoryValue} />
                     <ValueRow label="Cash / Receivables" value={accounting.cashReceivables} />
+                    <ValueRow label="Customer Receivables" value={accounting.customerReceivables} />
                     <SubtotalRow label="Total Assets" value={accounting.totalAssets} highlight />
                   </TableBody>
                 </Table>
@@ -361,6 +373,7 @@ export default function Accounts() {
                 <Table>
                   <TableBody>
                     <ValueRow label="Supplier Payables" value={accounting.supplierPayables} negative />
+                    <ValueRow label="Supplier Payables Due" value={accounting.supplierPayablesDue} negative />
                     <SubtotalRow label="Total Liabilities" value={accounting.totalLiabilities} />
                     <ValueRow label="Retained Earnings" value={accounting.retainedEarnings} />
                   </TableBody>

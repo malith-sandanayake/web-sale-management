@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { collection, getDocs, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
-import { Plus, Search, User, Phone, MapPin, Edit2, Trash } from 'lucide-react';
+import { Plus, Search, User, Phone, Edit2, Trash, Download, Printer } from 'lucide-react';
 import { useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -14,6 +14,7 @@ import { Badge } from '../../components/ui/badge';
 import { generateNextCustomerCode } from '../../lib/utils';
 import { toast } from 'sonner';
 import { CustomerType } from '../../types';
+import { exportToCSV, exportToExcel, printTable } from '../../lib/exportUtils';
 
 export default function Customers() {
   const [customers, setCustomers] = useState<any[]>([]);
@@ -41,7 +42,7 @@ export default function Customers() {
     }
   }
 
-  const handleAddCustomer = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleAddCustomer = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const nextCode = generateNextCustomerCode(customers);
@@ -73,7 +74,7 @@ export default function Customers() {
     setIsEditOpen(true);
   };
 
-  const handleUpdateCustomer = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleUpdateCustomer = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editingCustomer) return toast.error('No customer selected');
     if (!editForm.name.trim()) return toast.error('Customer name is required');
@@ -112,6 +113,14 @@ export default function Customers() {
     c.name.toLowerCase().includes(search.toLowerCase()) || 
     (c.customerCode && c.customerCode.includes(search))
   );
+
+  const exportRows = filtered.map((customer) => ({
+    code: customer.customerCode,
+    name: customer.name,
+    type: customer.customerType,
+    phone: customer.phone || '',
+    joinedDate: customer.createdAt,
+  }));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -206,7 +215,13 @@ export default function Customers() {
         </Dialog>
       </div>
 
-      <Card className="border-none shadow-sm overflow-hidden">
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={() => exportToCSV(exportRows, 'customers.csv')}><Download className="w-4 h-4 mr-2" /> CSV</Button>
+        <Button variant="outline" size="sm" onClick={() => exportToExcel(exportRows, 'customers.xlsx')}><Download className="w-4 h-4 mr-2" /> Excel</Button>
+        <Button variant="outline" size="sm" onClick={() => printTable('customers-table')}><Printer className="w-4 h-4 mr-2" /> Print</Button>
+      </div>
+
+      <Card id="customers-table" className="border-none shadow-sm overflow-hidden">
         <CardHeader className="pb-3 border-b">
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

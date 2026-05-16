@@ -27,6 +27,10 @@ import ProductPerformance from './app/product-performance/page';
 import Suppliers from './app/suppliers/page';
 import Inventory from './app/inventory/page';
 import Accounts from './app/accounts/page';
+import Barcodes from './app/barcodes/page';
+import POS from './app/pos/page';
+import DueLedger from './app/due-ledger/page';
+import Returns from './app/returns/page';
 import type { ReactNode } from 'react';
 
 function ProtectedLayout({ children }: { children: ReactNode }) {
@@ -93,6 +97,14 @@ export default function App() {
           element={user ? <ProtectedLayout><NewSale /></ProtectedLayout> : <Navigate to="/login" replace />} 
         />
         <Route 
+          path="/pos" 
+          element={user ? <ProtectedLayout><POS /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/barcodes" 
+          element={user ? <ProtectedLayout><Barcodes /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
           path="/products" 
           element={user ? <ProtectedLayout><Products /></ProtectedLayout> : <Navigate to="/login" replace />} 
         />
@@ -117,6 +129,10 @@ export default function App() {
           element={user ? <ProtectedLayout><GeneralExpenses /></ProtectedLayout> : <Navigate to="/login" replace />} 
         />
         <Route 
+          path="/returns" 
+          element={user ? <ProtectedLayout><Returns /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
           path="/suppliers" 
           element={user ? <ProtectedLayout><Suppliers /></ProtectedLayout> : <Navigate to="/login" replace />} 
         />
@@ -127,6 +143,10 @@ export default function App() {
         <Route 
           path="/accounts" 
           element={user ? <ProtectedLayout><Accounts /></ProtectedLayout> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/due-ledger" 
+          element={user ? <ProtectedLayout><DueLedger /></ProtectedLayout> : <Navigate to="/login" replace />} 
         />
         <Route 
           path="/reports" 

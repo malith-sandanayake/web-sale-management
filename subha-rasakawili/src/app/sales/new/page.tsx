@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { collection, getDocs, addDoc, doc, updateDoc, writeBatch, query, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../../lib/firebase';
 import { useNavigate } from 'react-router-dom';
@@ -97,7 +97,7 @@ export default function NewSale() {
 
   const totalAmount = items.reduce((sum, item) => sum + item.subtotal, 0);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!selectedCustomer) return toast.error("Please select a customer");
     if (items.some(i => !i.productId)) return toast.error("Please select products for all rows");

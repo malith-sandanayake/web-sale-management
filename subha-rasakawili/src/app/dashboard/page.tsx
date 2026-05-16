@@ -51,6 +51,8 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState<any[]>([]);
   const [pieData, setPieData] = useState<any[]>([]);
   const [productPieData, setProductPieData] = useState<any[]>([]);
+  const [lowStockIngredients, setLowStockIngredients] = useState<any[]>([]);
+  const [dueSummary, setDueSummary] = useState({ customerDue: 0, supplierDue: 0 });
   const [loading, setLoading] = useState(true);
 
   const parseDate = (value: any) => {
@@ -80,10 +82,25 @@ export default function Dashboard() {
         const generalExpSnap = await getDocs(collection(db, 'expense_general'));
         const customersSnap = await getDocs(collection(db, 'customers'));
         const receiptItemsSnap = await getDocs(collection(db, 'receipt_items'));
+        const ingredientSnap = await getDocs(collection(db, 'ingredients'));
+        const dueLedgerSnap = await getDocs(collection(db, 'due_ledger'));
 
         const customersMap = new Map(customersSnap.docs.map((d) => [d.id, d.data()]));
         const productsSnap = await getDocs(collection(db, 'products'));
         const productsMap = new Map(productsSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
+
+        const lowStockRows = ingredientSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as any))
+          .filter((ingredient) => Number(ingredient.currentStock || 0) <= Number(ingredient.lowStockThreshold ?? ingredient.reorderLevel ?? 0));
+        setLowStockIngredients(lowStockRows);
+
+        const activeDueEntries = dueLedgerSnap.docs
+          .map((d) => d.data() as any)
+          .filter((entry) => entry.status !== 'CLEARED');
+        setDueSummary({
+          customerDue: activeDueEntries.filter((entry) => entry.partyType === 'CUSTOMER').reduce((sum, entry) => sum + Number(entry.dueAmount || 0), 0),
+          supplierDue: activeDueEntries.filter((entry) => entry.partyType === 'SUPPLIER').reduce((sum, entry) => sum + Number(entry.dueAmount || 0), 0),
+        });
 
         const productSalesMap = new Map();
         const allTimeProductSalesMap = new Map();
@@ -402,6 +419,56 @@ export default function Dashboard() {
           </Table>
         </CardContent>
       </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-amber-200 shadow-sm overflow-hidden">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">Low Stock Alerts</CardTitle>
+            <CardDescription>Ingredients at or below their threshold</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {lowStockIngredients.length === 0 ? (
+              <div className="rounded-lg bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">All stock levels healthy</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent border-slate-100">
+                    <TableHead>Ingredient</TableHead>
+                    <TableHead>Current Stock</TableHead>
+                    <TableHead>Threshold</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lowStockIngredients.map((ingredient) => (
+                    <TableRow key={ingredient.id} className="border-slate-50">
+                      <TableCell className="font-semibold">{ingredient.name}</TableCell>
+                      <TableCell>{Number(ingredient.currentStock || 0)}</TableCell>
+                      <TableCell>{Number(ingredient.lowStockThreshold ?? ingredient.reorderLevel ?? 0)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm overflow-hidden">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">Due Summary</CardTitle>
+            <CardDescription>Open and partial credit balances</CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4">
+            <div className="rounded-lg bg-slate-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Customer Due Total</p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{formatLKR(dueSummary.customerDue)}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Supplier Due Total</p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{formatLKR(dueSummary.supplierDue)}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
