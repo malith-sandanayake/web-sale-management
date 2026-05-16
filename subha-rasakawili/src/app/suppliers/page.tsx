@@ -18,13 +18,14 @@ const emptyForm = {
   name: '',
   phone: '',
   address: '',
-  category: SupplierCategory.INGREDIENT,
+  category: '',
   creditTermDays: '30',
 };
 
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [transactions, setTransactions] = useState<SupplierTransaction[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -36,6 +37,8 @@ export default function Suppliers() {
   const [isSaving, setIsSaving] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ amount: '', notes: '' });
   const [editForm, setEditForm] = useState(emptyForm);
+  const [addFormCategory, setAddFormCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<SupplierCategory>(SupplierCategory.INGREDIENT);
 
   useEffect(() => {
     fetchData();
@@ -43,13 +46,15 @@ export default function Suppliers() {
 
   async function fetchData() {
     try {
-      const [supplierSnap, transactionSnap] = await Promise.all([
+      const [supplierSnap, transactionSnap, productSnap] = await Promise.all([
         getDocs(query(collection(db, 'suppliers'), orderBy('createdAt', 'desc'))),
         getDocs(query(collection(db, 'supplier_transactions'), orderBy('createdAt', 'desc'))),
+        getDocs(collection(db, 'products')),
       ]);
 
       setSuppliers(supplierSnap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier)));
       setTransactions(transactionSnap.docs.map(d => ({ id: d.id, ...d.data() } as SupplierTransaction)));
+      setProducts(productSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'suppliers');
     } finally {
@@ -74,7 +79,7 @@ export default function Suppliers() {
       name: supplier.name || '',
       phone: supplier.phone || '',
       address: supplier.address || '',
-      category: supplier.category || SupplierCategory.INGREDIENT,
+      category: supplier.category || '',
       creditTermDays: String(supplier.creditTermDays ?? 30),
     });
     setIsEditOpen(true);
@@ -102,13 +107,14 @@ export default function Suppliers() {
         name: String(formData.get('name') || '').trim(),
         phone: String(formData.get('phone') || '').trim(),
         address: String(formData.get('address') || '').trim(),
-        category: formData.get('category') as SupplierCategory,
+        category: selectedCategory,
         creditTermDays: Number(formData.get('creditTermDays') || 30),
         outstandingBalance: 0,
         createdAt: new Date().toISOString(),
       });
       toast.success('Supplier added successfully');
       setIsAddOpen(false);
+      setAddFormCategory('');
       e.currentTarget.reset();
       fetchData();
     } catch (error) {
@@ -217,7 +223,7 @@ export default function Suppliers() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Suppliers</h1>
           <p className="text-slate-500 mt-1">Manage supplier accounts, payments, and running balances.</p>
         </div>
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <Dialog open={isAddOpen} onOpenChange={(open) => { setIsAddOpen(open); if (!open) setSelectedCategory(SupplierCategory.INGREDIENT); }}>
           <DialogTrigger render={<Button className="bg-slate-900"><Plus className="w-4 h-4 mr-2" /> Add Supplier</Button>} />
           <DialogContent>
             <form onSubmit={handleAddSupplier}>
@@ -241,7 +247,7 @@ export default function Suppliers() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Category</Label>
-                    <Select name="category" defaultValue={SupplierCategory.INGREDIENT}>
+                    <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as SupplierCategory)}>
                       <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                       <SelectContent>
                         {Object.values(SupplierCategory).map((category) => (
@@ -287,11 +293,11 @@ export default function Suppliers() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Category</Label>
-                    <Select value={editForm.category} onValueChange={(value) => setEditForm((prev) => ({ ...prev, category: value as SupplierCategory }))}>
-                      <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                    <Select value={editForm.category} onValueChange={(value) => setEditForm((prev) => ({ ...prev, category: value }))}>
+                      <SelectTrigger><SelectValue placeholder="Select a product" /></SelectTrigger>
                       <SelectContent>
-                        {Object.values(SupplierCategory).map((category) => (
-                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        {products.map((product) => (
+                          <SelectItem key={product.id} value={product.name}>{product.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

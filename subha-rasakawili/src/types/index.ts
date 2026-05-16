@@ -12,6 +12,7 @@ export enum CustomerType {
 
 export enum SupplierCategory {
   INGREDIENT = 'INGREDIENT',
+  PRODUCT = 'PRODUCT',
   SERVICE = 'SERVICE'
 }
 

@@ -51,7 +51,7 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-100 flex flex-col h-dvh sticky top-0 shrink-0 overflow-hidden">
+    <aside className="w-64 bg-slate-900 text-slate-100 flex flex-col h-dvh shrink-0">
       <div className="p-6">
         <h1 className="text-xl font-bold tracking-tight text-amber-400">
           Subha Rasakawili
