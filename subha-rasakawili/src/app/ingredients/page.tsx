@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { Leaf, Plus, Search, DollarSign, Edit2, Trash } from 'lucide-react';
@@ -39,7 +39,7 @@ export default function Ingredients() {
     }
   }
 
-  const handleAddIngredient = async (e: FormEvent<HTMLFormElement>) => {
+  const handleAddIngredient = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const nextCode = generateNextIngredientCode(ingredients);
@@ -75,7 +75,7 @@ export default function Ingredients() {
     setIsEditOpen(true);
   };
 
-  const handleUpdateIngredient = async (e: FormEvent<HTMLFormElement>) => {
+  const handleUpdateIngredient = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editingIngredient) return toast.error('No ingredient selected');
     if (!editForm.name.trim()) return toast.error('Name is required');

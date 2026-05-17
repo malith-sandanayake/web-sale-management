@@ -93,37 +93,3 @@ export function generateNextSupplierCode(existingSuppliers: Array<{ supplierCode
   const nextCode = codes.length > 0 ? codes[0] + 1 : 1;
   return 'S' + String(nextCode).padStart(3, '0');
 }
-
-export function generateNextReturnCode(existingReturns: Array<{ returnCode?: string }>) {
-  if (!existingReturns || existingReturns.length === 0) {
-    return 'R001';
-  }
-
-  const codes = existingReturns
-    .map(r => {
-      const match = r.returnCode?.match(/\d+/);
-      return match ? parseInt(match[0], 10) : 0;
-    })
-    .filter(code => !isNaN(code))
-    .sort((a, b) => b - a);
-
-  const nextCode = codes.length > 0 ? codes[0] + 1 : 1;
-  return 'R' + String(nextCode).padStart(3, '0');
-}
-
-export function generateNextDueCode(existingDues: Array<{ dueCode?: string }>) {
-  if (!existingDues || existingDues.length === 0) {
-    return 'D001';
-  }
-
-  const codes = existingDues
-    .map(d => {
-      const match = d.dueCode?.match(/\d+/);
-      return match ? parseInt(match[0], 10) : 0;
-    })
-    .filter(code => !isNaN(code))
-    .sort((a, b) => b - a);
-
-  const nextCode = codes.length > 0 ? codes[0] + 1 : 1;
-  return 'D' + String(nextCode).padStart(3, '0');
-}

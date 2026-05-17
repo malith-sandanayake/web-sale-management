@@ -1,7 +1,7 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, query, orderBy } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../../lib/firebase';
-import { Plus, Download, Printer } from 'lucide-react';
+import { Plus, Wallet, Tag } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
@@ -13,7 +13,6 @@ import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { ExpenseCategory } from '../../../types';
 import { toast } from 'sonner';
-import { exportToCSV, exportToExcel, printTable } from '../../../lib/exportUtils';
 
 export default function GeneralExpenses() {
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -36,7 +35,7 @@ export default function GeneralExpenses() {
     }
   }
 
-  const handleAddExpense = async (e: FormEvent<HTMLFormElement>) => {
+  const handleAddExpense = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const data = {
@@ -56,13 +55,6 @@ export default function GeneralExpenses() {
       handleFirestoreError(e, OperationType.CREATE, 'expenses');
     }
   };
-
-  const exportRows = expenses.map((expense) => ({
-    date: expense.expenseDate,
-    category: expense.category,
-    description: expense.description || '',
-    amount: expense.amount,
-  }));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -111,13 +103,7 @@ export default function GeneralExpenses() {
         </Dialog>
       </div>
 
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => exportToCSV(exportRows, 'general-expenses.csv')}><Download className="w-4 h-4 mr-2" /> CSV</Button>
-        <Button variant="outline" size="sm" onClick={() => exportToExcel(exportRows, 'general-expenses.xlsx')}><Download className="w-4 h-4 mr-2" /> Excel</Button>
-        <Button variant="outline" size="sm" onClick={() => printTable('general-expenses-table')}><Printer className="w-4 h-4 mr-2" /> Print</Button>
-      </div>
-
-      <Card id="general-expenses-table" className="border-none shadow-sm overflow-hidden">
+      <Card className="border-none shadow-sm overflow-hidden">
         <CardContent className="p-0">
           <Table>
             <TableHeader>

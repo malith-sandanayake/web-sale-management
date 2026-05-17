@@ -1,8 +1,16 @@
-import { useState, useEffect, type FormEvent } from 'react';
-import { collection, doc, getDocs, query, runTransaction, where } from 'firebase/firestore';
-import { db } from '../../../lib/firebase';
+import { useState, useEffect } from 'react';
+import { collection, getDocs, addDoc, doc, updateDoc, writeBatch, query, where } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../../../lib/firebase';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Search, ArrowLeft, Info } from 'lucide-react';
+import { 
+  Plus, 
+  Trash2, 
+  Search, 
+  UserPlus, 
+  ArrowLeft,
+  Info,
+  Calendar as CalendarIcon
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -10,7 +18,6 @@ import { Label } from '../../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
 import { Separator } from '../../../components/ui/separator';
-import { Badge } from '../../../components/ui/badge';
 import { formatLKR, generateReceiptNo, generateInvoiceNo } from '../../../lib/utils';
 import { toast } from 'sonner';
 import { CustomerType, PaymentType } from '../../../types';
@@ -21,7 +28,6 @@ export default function NewSale() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<string>("");
   const [customerType, setCustomerType] = useState<CustomerType>(CustomerType.RETAIL);
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CREDIT'>('CASH');
   const [items, setItems] = useState<any[]>([
     { id: '1', productId: '', quantity: 1, unitPrice: 0, subtotal: 0, unitType: '' }
   ]);
@@ -89,125 +95,58 @@ export default function NewSale() {
     setItems(newItems);
   };
 
-  const totalAmount = items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
+  const totalAmount = items.reduce((sum, item) => sum + item.subtotal, 0);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomer) return toast.error("Please select a customer");
-    if (items.some((item) => !item.productId)) return toast.error("Please select products for all rows");
-    if (items.some((item) => Number(item.quantity || 0) <= 0)) return toast.error("Item quantities must be greater than zero");
+    if (items.some(i => !i.productId)) return toast.error("Please select products for all rows");
 
     setLoading(true);
+    const batch = writeBatch(db);
     
     try {
       const receiptId = doc(collection(db, 'receipts')).id;
       const receiptNo = generateReceiptNo();
       const invoiceNo = generateInvoiceNo();
-      const createdAt = new Date().toISOString();
-      const paymentStatus = paymentMethod === 'CREDIT' ? 'PENDING' : 'PAID';
 
-      await runTransaction(db, async (transaction) => {
-        const customerRef = doc(db, 'customers', selectedCustomer);
-        const customerTransactionId = paymentMethod === 'CREDIT' ? doc(collection(db, 'customer_transactions')).id : null;
-
-        let balanceBefore = 0;
-        let balanceAfter = 0;
-
-        if (paymentMethod === 'CREDIT') {
-          const customerSnapshot = await transaction.get(customerRef);
-          if (!customerSnapshot.exists()) {
-            throw new Error('Selected customer was not found');
-          }
-
-          balanceBefore = Number(customerSnapshot.data().outstandingBalance || 0);
-          balanceAfter = balanceBefore + totalAmount;
-        }
-
-        for (const item of items) {
-          const productRef = doc(db, 'products', item.productId);
-          const productSnapshot = await transaction.get(productRef);
-
-          if (!productSnapshot.exists()) {
-            throw new Error(`Product not found for item ${item.productId}`);
-          }
-
-          const productData = productSnapshot.data();
-          const currentStock = Number(productData.currentStock || 0);
-          const quantity = Number(item.quantity || 0);
-
-          if (currentStock < quantity) {
-            throw new Error(`${productData.name || item.productId} does not have enough stock`);
-          }
-
-          transaction.update(productRef, {
-            currentStock: currentStock - quantity,
-            updatedAt: createdAt,
-          });
-        }
-
-        transaction.set(doc(db, 'receipts', receiptId), {
-          receiptNumber: receiptNo,
-          customerId: selectedCustomer,
-          saleDate: createdAt,
-          subtotal: totalAmount,
-          discountType,
-          discountAmount,
-          totalAmount,
-          paymentMethod,
-          paymentStatus,
-          paymentType: paymentMethod === 'CREDIT' ? PaymentType.CREDIT : PaymentType.CASH,
-          isReturned: false,
-          createdAt,
-        });
-
-        for (const item of items) {
-          const itemId = doc(collection(db, 'receipt_items')).id;
-          transaction.set(doc(db, 'receipt_items', itemId), {
-            receiptId,
-            productId: item.productId,
-            quantity: Number(item.quantity || 0),
-            unitType: item.unitType,
-            unitPrice: Number(item.unitPrice || 0),
-            subtotal: Number(item.subtotal || 0),
-          });
-        }
-
-        const paymentId = doc(collection(db, 'payments')).id;
-        transaction.set(doc(db, 'payments', paymentId), {
-          invoiceNumber: invoiceNo,
-          receiptId,
-          paymentType: paymentMethod === 'CREDIT' ? PaymentType.CREDIT : PaymentType.CASH,
-          amount: paymentMethod === 'CREDIT' ? 0 : totalAmount,
-          paymentDate: createdAt,
-        });
-
-        if (paymentMethod === 'CREDIT') {
-          transaction.update(customerRef, {
-            outstandingBalance: balanceAfter,
-            updatedAt: createdAt,
-          });
-
-          if (!customerTransactionId) {
-            throw new Error('Failed to create customer transaction record');
-          }
-
-          transaction.set(doc(db, 'customer_transactions', customerTransactionId), {
-            customerId: selectedCustomer,
-            receiptId,
-            type: 'CREDIT_SALE',
-            amount: totalAmount,
-            balanceBefore,
-            balanceAfter,
-            createdAt,
-          });
-        }
+      // Create Receipt
+      batch.set(doc(db, 'receipts', receiptId), {
+        receiptNumber: receiptNo,
+        customerId: selectedCustomer,
+        saleDate: new Date().toISOString(),
+        totalAmount: totalAmount,
+        createdAt: new Date().toISOString()
       });
 
+      // Create Receipt Items
+      items.forEach(item => {
+        const itemId = doc(collection(db, 'receipt_items')).id;
+        batch.set(doc(db, 'receipt_items', itemId), {
+          receiptId: receiptId,
+          productId: item.productId,
+          quantity: item.quantity,
+          unitType: item.unitType,
+          unitPrice: item.unitPrice,
+          subtotal: item.subtotal
+        });
+      });
+
+      // Create Payment
+      const paymentId = doc(collection(db, 'payments')).id;
+      batch.set(doc(db, 'payments', paymentId), {
+        invoiceNumber: invoiceNo,
+        receiptId: receiptId,
+        paymentType: PaymentType.CASH,
+        amount: totalAmount,
+        paymentDate: new Date().toISOString()
+      });
+
+      await batch.commit();
       toast.success(`Sale completed! Receipt: ${receiptNo}`);
       navigate('/sales');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to complete sale';
-      toast.error(message);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'new_sale');
     } finally {
       setLoading(false);
     }
@@ -236,11 +175,11 @@ export default function NewSale() {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent border-slate-100">
-                    <TableHead className="pl-6 w-62.5">Product</TableHead>
-                    <TableHead className="w-25">Quantity</TableHead>
+                    <TableHead className="pl-6 w-[250px]">Product</TableHead>
+                    <TableHead className="w-[100px]">Quantity</TableHead>
                     <TableHead>Price</TableHead>
                     <TableHead>Subtotal</TableHead>
-                    <TableHead className="w-12.5"></TableHead>
+                    <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -337,27 +276,6 @@ export default function NewSale() {
                 </Select>
               </div>
 
-              <div className="grid gap-2">
-                <Label>Payment Terms</Label>
-                <Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as 'CASH' | 'CREDIT')}>
-                  <SelectTrigger className="h-11 border-slate-200">
-                    <SelectValue placeholder="Select payment terms" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CASH">Cash</SelectItem>
-                    <SelectItem value="CREDIT">Credit</SelectItem>
-                  </SelectContent>
-                </Select>
-                {paymentMethod === 'CREDIT' && (
-                  <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                    <Badge className="bg-amber-200 text-amber-900 hover:bg-amber-200">Credit</Badge>
-                    <p className="text-xs leading-5 text-amber-800">
-                      Final order total will be attached to the selected customer’s outstanding balance ledger automatically.
-                    </p>
-                  </div>
-                )}
-              </div>
-
               {selectedCustomer && (
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between">
                   <div>
@@ -399,7 +317,7 @@ export default function NewSale() {
               <Info className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="text-xs space-y-1">
                 <p className="font-bold">Summary Notes</p>
-                <p>This sale will be recorded as {paymentMethod} and processed atomically with stock and balance updates.</p>
+                <p>This sale will be recorded as a Cash payment by default. Inventory and recipe levels are currently not tracked in real-time updates.</p>
               </div>
             </CardContent>
           </Card>

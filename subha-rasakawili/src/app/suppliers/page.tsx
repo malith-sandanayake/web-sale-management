@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { collection, deleteDoc, doc, getDocs, query, orderBy, runTransaction, addDoc, updateDoc } from 'firebase/firestore';
-import { Building2, Edit2, History, MapPin, Plus, Search, Trash, Wallet, Phone, Download, Printer } from 'lucide-react';
+import { Building2, Edit2, History, MapPin, Plus, Search, Trash, Wallet, Phone } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
@@ -13,7 +13,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { formatLKR, generateNextSupplierCode } from '../../lib/utils';
 import { Supplier, SupplierCategory, SupplierPaymentMethod, SupplierTransaction } from '../../types';
 import { toast } from 'sonner';
-import { exportToCSV, exportToExcel, printTable } from '../../lib/exportUtils';
 
 const emptyForm = {
   name: '',
@@ -221,15 +220,6 @@ export default function Suppliers() {
       .slice()
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }, [transactions, selectedSupplier]);
-
-  const exportRows = filteredSuppliers.map((supplier) => ({
-    code: supplier.supplierCode,
-    name: supplier.name,
-    category: supplier.category,
-    phone: supplier.phone || '',
-    paymentMethod: supplier.paymentMethod,
-    outstandingBalance: supplier.outstandingBalance || 0,
-  }));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -451,13 +441,7 @@ export default function Suppliers() {
         </Dialog>
       </div>
 
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => exportToCSV(exportRows, 'suppliers.csv')}><Download className="w-4 h-4 mr-2" /> CSV</Button>
-        <Button variant="outline" size="sm" onClick={() => exportToExcel(exportRows, 'suppliers.xlsx')}><Download className="w-4 h-4 mr-2" /> Excel</Button>
-        <Button variant="outline" size="sm" onClick={() => printTable('suppliers-table')}><Printer className="w-4 h-4 mr-2" /> Print</Button>
-      </div>
-
-      <Card id="suppliers-table" className="border-none shadow-sm overflow-hidden">
+      <Card className="border-none shadow-sm overflow-hidden">
         <CardHeader className="pb-3 border-b">
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

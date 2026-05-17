@@ -1,7 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { collection, getDocs, query, orderBy, updateDoc, doc, runTransaction } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../../lib/firebase';
-import { Plus, Trash2, Undo2, Download, Printer } from 'lucide-react';
+import { Plus, ShoppingCart, Calendar, Search, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
@@ -11,8 +11,7 @@ import { Input } from '../../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { formatLKR } from '../../../lib/utils';
 import { toast } from 'sonner';
-import { ReturnType, Supplier, StockMovementType, StockReferenceType } from '../../../types';
-import { exportToCSV, exportToExcel, printTable } from '../../../lib/exportUtils';
+import { Supplier, StockMovementType, StockReferenceType } from '../../../types';
 
 export default function Purchases() {
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -20,8 +19,6 @@ export default function Purchases() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [returnPurchase, setReturnPurchase] = useState<any | null>(null);
-  const [returnForm, setReturnForm] = useState({ quantity: '', reason: '' });
   const [selectedIngredient, setSelectedIngredient] = useState<string>("");
   const [selectedSupplier, setSelectedSupplier] = useState<string>("");
 
@@ -42,18 +39,13 @@ export default function Purchases() {
         acc[d.id] = d.data().name;
         return acc;
       }, {});
-      const supplierMap = sSnap.docs.reduce((acc: any, d) => {
-        acc[d.id] = d.data().name;
-        return acc;
-      }, {});
 
       setIngredients(iSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       setSuppliers(sSnap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier)));
       setPurchases(pSnap.docs.map(d => ({ 
         id: d.id, 
         ...d.data(),
-        ingredientName: ingMap[d.data().ingredientId] || 'Unknown',
-        supplierName: d.data().supplierId ? supplierMap[d.data().supplierId] || 'Unknown' : '-'
+        ingredientName: ingMap[d.data().ingredientId] || 'Unknown'
       })));
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, 'purchases');
@@ -173,98 +165,6 @@ export default function Purchases() {
     }
   };
 
-  const openReturnDialog = (purchase: any) => {
-    setReturnPurchase(purchase);
-    setReturnForm({ quantity: String(purchase.quantity || ''), reason: '' });
-  };
-
-  const processPurchaseReturn = async () => {
-    if (!returnPurchase) return;
-    const quantity = Number(returnForm.quantity || 0);
-    if (quantity <= 0 || quantity > Number(returnPurchase.quantity || 0)) return toast.error('Enter a valid return quantity');
-
-    const createdAt = new Date().toISOString();
-    const totalAmount = quantity * Number(returnPurchase.unitRate || 0);
-
-    try {
-      await runTransaction(db, async (transaction) => {
-        const ingredientRef = doc(db, 'ingredients', returnPurchase.ingredientId);
-        const ingredientSnap = await transaction.get(ingredientRef);
-        if (!ingredientSnap.exists()) throw new Error('Ingredient not found');
-
-        const ingredientData = ingredientSnap.data() as any;
-        const balanceAfter = Math.max(0, Number(ingredientData.currentStock || 0) - quantity);
-        const returnId = doc(collection(db, 'returns')).id;
-
-        transaction.set(doc(db, 'returns', returnId), {
-          returnType: ReturnType.PURCHASE_RETURN,
-          originalPurchaseId: returnPurchase.id,
-          partyId: returnPurchase.supplierId || '',
-          items: [{ productId: '', ingredientId: returnPurchase.ingredientId, quantity, unitPrice: returnPurchase.unitRate, subtotal: totalAmount }],
-          totalAmount,
-          reason: returnForm.reason.trim(),
-          createdAt,
-        });
-
-        transaction.update(ingredientRef, { currentStock: balanceAfter, updatedAt: createdAt });
-
-        const stockMovementId = doc(collection(db, 'stock_movements')).id;
-        transaction.set(doc(db, 'stock_movements', stockMovementId), {
-          ingredientId: returnPurchase.ingredientId,
-          movementType: StockMovementType.STOCK_OUT,
-          quantity,
-          unitCost: returnPurchase.unitRate,
-          totalValue: totalAmount,
-          referenceType: StockReferenceType.RETURN,
-          referenceId: returnId,
-          notes: returnForm.reason.trim(),
-          balanceAfter,
-          createdAt,
-        });
-
-        if (returnPurchase.supplierId) {
-          const supplierRef = doc(db, 'suppliers', returnPurchase.supplierId);
-          const supplierSnap = await transaction.get(supplierRef);
-          if (supplierSnap.exists()) {
-            const supplierData = supplierSnap.data() as any;
-            const balanceBefore = Number(supplierData.outstandingBalance || 0);
-            const supplierBalanceAfter = balanceBefore - totalAmount;
-            transaction.update(supplierRef, { outstandingBalance: supplierBalanceAfter, updatedAt: createdAt });
-            const supplierTransactionId = doc(collection(db, 'supplier_transactions')).id;
-            transaction.set(doc(db, 'supplier_transactions', supplierTransactionId), {
-              supplierId: returnPurchase.supplierId,
-              type: 'PAYMENT',
-              referenceId: returnId,
-              amount: totalAmount,
-              balanceBefore,
-              balanceAfter: supplierBalanceAfter,
-              notes: returnForm.reason.trim() || 'Purchase return credit',
-              createdAt,
-            });
-          }
-        }
-
-        transaction.update(doc(db, 'expense_purchases', returnPurchase.id), { hasReturn: true, returnedAt: createdAt });
-      });
-
-      toast.success('Purchase return processed');
-      setReturnPurchase(null);
-      fetchData();
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'returns');
-    }
-  };
-
-  const exportRows = purchases.map((purchase) => ({
-    date: purchase.purchaseDate,
-    ingredient: purchase.ingredientName,
-    supplier: purchase.supplierName,
-    quantity: purchase.quantity,
-    unitRate: purchase.unitRate,
-    totalAmount: purchase.totalAmount,
-    status: purchase.isReversed ? 'Reversed' : purchase.hasReturn ? 'Returned' : 'Active',
-  }));
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -333,13 +233,7 @@ export default function Purchases() {
         </Dialog>
       </div>
 
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => exportToCSV(exportRows, 'purchases.csv')}><Download className="w-4 h-4 mr-2" /> CSV</Button>
-        <Button variant="outline" size="sm" onClick={() => exportToExcel(exportRows, 'purchases.xlsx')}><Download className="w-4 h-4 mr-2" /> Excel</Button>
-        <Button variant="outline" size="sm" onClick={() => printTable('purchases-table')}><Printer className="w-4 h-4 mr-2" /> Print</Button>
-      </div>
-
-      <Card id="purchases-table" className="border-none shadow-sm overflow-hidden">
+      <Card className="border-none shadow-sm overflow-hidden">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -371,17 +265,10 @@ export default function Purchases() {
                   <TableCell className="text-right">
                     {p.isReversed ? (
                       <span className="inline-flex rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Reversed</span>
-                    ) : p.hasReturn ? (
-                      <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">Returned</span>
                     ) : (
-                      <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => openReturnDialog(p)} title="Process return">
-                          <Undo2 className="w-4 h-4 text-amber-600" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => reversePurchase(p.id)}>
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </Button>
-                      </div>
+                      <Button variant="ghost" size="icon" onClick={() => reversePurchase(p.id)}>
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -395,29 +282,6 @@ export default function Purchases() {
           </Table>
         </CardContent>
       </Card>
-
-      <Dialog open={!!returnPurchase} onOpenChange={(open) => !open && setReturnPurchase(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Process Purchase Return</DialogTitle>
-            <DialogDescription>{returnPurchase ? `Return ${returnPurchase.ingredientName}.` : 'Return purchase items.'}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="return-quantity">Quantity</Label>
-              <Input id="return-quantity" type="number" min="0" max={returnPurchase?.quantity || 0} step="0.01" value={returnForm.quantity} onChange={(event) => setReturnForm((prev) => ({ ...prev, quantity: event.target.value }))} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="return-reason">Reason</Label>
-              <Input id="return-reason" value={returnForm.reason} onChange={(event) => setReturnForm((prev) => ({ ...prev, reason: event.target.value }))} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReturnPurchase(null)}>Cancel</Button>
-            <Button className="bg-slate-900" onClick={processPurchaseReturn}>Confirm Return</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

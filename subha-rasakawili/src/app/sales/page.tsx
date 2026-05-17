@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, orderBy, doc, getDoc, updateDoc, where, runTransaction } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, doc, getDoc, updateDoc, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
-import { Search, Filter, Receipt as ReceiptIcon, Eye, Download, Calendar, Trash2, Printer, Undo2 } from 'lucide-react';
+import { Search, Filter, Receipt as ReceiptIcon, Eye, Download, Calendar, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -10,9 +10,7 @@ import { Badge } from '../../components/ui/badge';
 import { formatLKR } from '../../lib/utils';
 import { Link } from 'react-router-dom';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog';
-import { PaymentType } from '../../types';
 import { toast } from 'sonner';
-import { exportToCSV, exportToExcel, printTable } from '../../lib/exportUtils';
 
 export default function SalesList() {
   const [sales, setSales] = useState<any[]>([]);
@@ -21,7 +19,6 @@ export default function SalesList() {
   const [selectedSale, setSelectedSale] = useState<any>(null);
   const [saleItems, setSaleItems] = useState<any[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
-  const [returningSaleId, setReturningSaleId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchSaleItems() {
@@ -95,127 +92,10 @@ export default function SalesList() {
     }
   };
 
-  const processSaleReturn = async (sale: any) => {
-    if (sale.isReturned) {
-      return toast.error('This receipt has already been returned');
-    }
-
-    const confirmed = window.confirm(
-      `Process return for ${sale.receiptNumber}? This will restore stock quantities and reverse the receipt balance if it was a credit sale.`
-    );
-    if (!confirmed) return;
-
-    setReturningSaleId(sale.id);
-    const createdAt = new Date().toISOString();
-
-    try {
-      const itemSnap = await getDocs(query(collection(db, 'receipt_items'), where('receiptId', '==', sale.id)));
-      const itemRows = itemSnap.docs.map((itemDoc) => ({ id: itemDoc.id, ...itemDoc.data() }));
-
-      const paymentSnap = !sale.paymentMethod
-        ? await getDocs(query(collection(db, 'payments'), where('receiptId', '==', sale.id)))
-        : null;
-      const paymentData = paymentSnap?.docs[0]?.data();
-      const originalPaymentMethod = sale.paymentMethod || sale.paymentType || paymentData?.paymentType || (sale.paymentStatus === 'PENDING' ? PaymentType.CREDIT : PaymentType.CASH);
-      const totalAmount = Number(sale.totalAmount || 0);
-
-      await runTransaction(db, async (transaction) => {
-        const receiptRef = doc(db, 'receipts', sale.id);
-        const receiptSnapshot = await transaction.get(receiptRef);
-
-        if (!receiptSnapshot.exists()) {
-          throw new Error('Receipt not found');
-        }
-
-        if (receiptSnapshot.data().isReturned) {
-          throw new Error('This receipt has already been returned');
-        }
-
-        let balanceBefore = 0;
-        let balanceAfter = 0;
-
-        for (const item of itemRows) {
-          const itemRef = doc(db, 'receipt_items', item.id);
-          const itemSnapshot = await transaction.get(itemRef);
-          if (!itemSnapshot.exists()) {
-            throw new Error('A receipt item was missing during return processing');
-          }
-
-          const itemData = itemSnapshot.data();
-          const productRef = doc(db, 'products', itemData.productId);
-          const productSnapshot = await transaction.get(productRef);
-
-          if (!productSnapshot.exists()) {
-            throw new Error(`Product not found for receipt item ${itemData.productId}`);
-          }
-
-          const productData = productSnapshot.data();
-          const currentStock = Number(productData.currentStock || 0);
-          const quantity = Number(itemData.quantity || 0);
-
-          transaction.update(productRef, {
-            currentStock: currentStock + quantity,
-            updatedAt: createdAt,
-          });
-        }
-
-        transaction.update(receiptRef, {
-          isReturned: true,
-          returnedAt: createdAt,
-        });
-
-        if (originalPaymentMethod === PaymentType.CREDIT || originalPaymentMethod === 'CREDIT') {
-          const customerRef = doc(db, 'customers', sale.customerId);
-          const customerSnapshot = await transaction.get(customerRef);
-
-          if (!customerSnapshot.exists()) {
-            throw new Error('Customer record not found for return processing');
-          }
-
-          balanceBefore = Number(customerSnapshot.data().outstandingBalance || 0);
-          balanceAfter = Math.max(0, balanceBefore - totalAmount);
-
-          transaction.update(customerRef, {
-            outstandingBalance: balanceAfter,
-            updatedAt: createdAt,
-          });
-
-          const customerTransactionId = doc(collection(db, 'customer_transactions')).id;
-          transaction.set(doc(db, 'customer_transactions', customerTransactionId), {
-            customerId: sale.customerId,
-            receiptId: sale.id,
-            type: 'SALES_RETURN',
-            amount: totalAmount,
-            balanceBefore,
-            balanceAfter,
-            createdAt,
-          });
-        }
-      });
-
-      toast.success('Warehouse stock update loop has completed successfully');
-      fetchSales();
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Failed to process sales return';
-      toast.error(message);
-    } finally {
-      setReturningSaleId(null);
-    }
-  };
-
   const filtered = sales.filter(s => 
     s.receiptNumber.toLowerCase().includes(search.toLowerCase()) || 
     s.customerName.toLowerCase().includes(search.toLowerCase())
   );
-
-  const exportRows = filtered.map((sale) => ({
-    receiptNumber: sale.receiptNumber,
-    date: sale.saleDate,
-    customer: sale.customerName,
-    type: sale.customerType,
-    totalAmount: sale.totalAmount,
-    status: sale.isReversed ? 'Reversed' : sale.isReturned ? 'Returned' : 'Active',
-  }));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -227,13 +107,7 @@ export default function SalesList() {
         <Button size="sm" className="bg-slate-900" render={<Link to="/sales/new">New Sale</Link>} />
       </div>
 
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => exportToCSV(exportRows, 'sales.csv')}><Download className="w-4 h-4 mr-2" /> CSV</Button>
-        <Button variant="outline" size="sm" onClick={() => exportToExcel(exportRows, 'sales.xlsx')}><Download className="w-4 h-4 mr-2" /> Excel</Button>
-        <Button variant="outline" size="sm" onClick={() => printTable('sales-table')}><Printer className="w-4 h-4 mr-2" /> Print</Button>
-      </div>
-
-      <Card id="sales-table" className="border-none shadow-sm overflow-hidden">
+      <Card className="border-none shadow-sm overflow-hidden">
         <CardHeader className="pb-3 border-b flex flex-row items-center justify-between space-y-0">
           <div className="relative max-w-sm w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -296,24 +170,9 @@ export default function SalesList() {
                         <Eye className="w-4 h-4" />
                       </Button>
                       {!sale.isReversed ? (
-                        <>
-                          {!sale.isReturned && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                              onClick={() => processSaleReturn(sale)}
-                              disabled={returningSaleId === sale.id}
-                              title="Process Return"
-                            >
-                              <Undo2 className="w-4 h-4 mr-2" />
-                              {returningSaleId === sale.id ? 'Processing...' : 'Process Return'}
-                            </Button>
-                          )}
-                          <Button variant="ghost" size="icon" onClick={() => reverseSale(sale.id)}>
-                            <Trash2 className="w-4 h-4 text-red-500" />
-                          </Button>
-                        </>
+                        <Button variant="ghost" size="icon" onClick={() => reverseSale(sale.id)}>
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
                       ) : (
                         <Badge variant="outline" className="uppercase text-xs px-2 py-1">Reversed</Badge>
                       )}
@@ -360,7 +219,7 @@ export default function SalesList() {
                   <Table>
                     <TableHeader className="bg-slate-50/50">
                       <TableRow className="border-slate-100 hover:bg-transparent">
-                        <TableHead className="w-25 font-semibold text-slate-600">Code</TableHead>
+                        <TableHead className="w-[100px] font-semibold text-slate-600">Code</TableHead>
                         <TableHead className="font-semibold text-slate-600">Item Name</TableHead>
                         <TableHead className="text-right font-semibold text-slate-600">Qty</TableHead>
                         <TableHead className="text-right font-semibold text-slate-600">Unit Price</TableHead>
@@ -411,7 +270,6 @@ export default function SalesList() {
           )}
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }

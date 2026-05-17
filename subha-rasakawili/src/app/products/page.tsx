@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '@/lib/firebase';
 import { Plus, Search, Edit2, Check, X, Package, Trash } from 'lucide-react';
@@ -12,14 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { formatLKR, generateNextProductCode } from '@/lib/utils';
 import { toast } from 'sonner';
-import { ProductAttribute, ProductCategory, UnitType } from '@/types';
-
-const emptyAttribute: ProductAttribute = { key: '', value: '' };
-
-function calculateProfitMargin(retailPrice: number, currentUnitCost: number) {
-  if (!retailPrice || retailPrice <= 0) return 0;
-  return ((retailPrice - currentUnitCost) / retailPrice) * 100;
-}
+import { UnitType } from '@/types';
 
 export default function Products() {
   const [products, setProducts] = useState<any[]>([]);
@@ -29,25 +22,11 @@ export default function Products() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isUpdateLoading, setIsUpdateLoading] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
-  const [addForm, setAddForm] = useState({
-    category: ProductCategory.FOOD,
-    brandName: '',
-    wholesalePrice: '',
-    retailPrice: '',
-    dealerPrice: '',
-    lowStockThreshold: '5'
-  });
-  const [addAttributes, setAddAttributes] = useState<ProductAttribute[]>([]);
   const [editForm, setEditForm] = useState({
     name: '',
     unitType: UnitType.PIECE,
-    category: ProductCategory.FOOD,
-    brandName: '',
     wholesalePrice: '',
-    retailPrice: '',
-    dealerPrice: '',
-    lowStockThreshold: '5',
-    attributes: [] as ProductAttribute[]
+    retailPrice: ''
   });
   const editFormRef = useRef<HTMLFormElement>(null);
 
@@ -66,24 +45,16 @@ export default function Products() {
     }
   }
 
-  const handleAddProduct = async (e: FormEvent<HTMLFormElement>) => {
+  const handleAddProduct = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const nextCode = generateNextProductCode(products);
-    const retailPrice = parseFloat(formData.get('retailPrice') as string);
-    const currentUnitCost = parseFloat(formData.get('currentUnitCost') as string) || 0;
     const data = {
       productCode: nextCode,
       name: formData.get('name') as string,
       unitType: formData.get('unitType') as string,
-      category: addForm.category,
-      brandName: addForm.brandName.trim(),
       wholesalePrice: parseFloat(formData.get('wholesalePrice') as string),
-      retailPrice,
-      dealerPrice: parseFloat(addForm.dealerPrice) || null,
-      lowStockThreshold: parseFloat(addForm.lowStockThreshold) || 5,
-      attributes: addAttributes.filter((attribute) => attribute.key.trim() && attribute.value.trim()),
-      profitMarginPercentage: calculateProfitMargin(retailPrice, currentUnitCost),
+      retailPrice: parseFloat(formData.get('retailPrice') as string),
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -93,8 +64,6 @@ export default function Products() {
       await addDoc(collection(db, 'products'), data);
       toast.success("Product added successfully");
       setIsAddOpen(false);
-      setAddForm({ category: ProductCategory.FOOD, brandName: '', wholesalePrice: '', retailPrice: '', dealerPrice: '', lowStockThreshold: '5' });
-      setAddAttributes([]);
       fetchProducts();
     } catch (e) {
       handleFirestoreError(e, OperationType.CREATE, 'products');
@@ -106,18 +75,13 @@ export default function Products() {
     setEditForm({
       name: product.name || '',
       unitType: product.unitType || UnitType.PIECE,
-      category: product.category || ProductCategory.FOOD,
-      brandName: product.brandName || '',
       wholesalePrice: product.wholesalePrice?.toString() ?? '',
-      retailPrice: product.retailPrice?.toString() ?? '',
-      dealerPrice: product.dealerPrice?.toString() ?? '',
-      lowStockThreshold: product.lowStockThreshold?.toString() ?? '5',
-      attributes: Array.isArray(product.attributes) ? product.attributes : []
+      retailPrice: product.retailPrice?.toString() ?? ''
     });
     setIsEditOpen(true);
   };
 
-  const handleUpdateProduct = async (e: FormEvent<HTMLFormElement>) => {
+  const handleUpdateProduct = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editingProduct) {
       toast.error("No product selected for editing");
@@ -143,14 +107,8 @@ export default function Products() {
       await updateDoc(doc(db, 'products', editingProduct.id), {
         name: editForm.name.trim(),
         unitType: editForm.unitType,
-        category: editForm.category,
-        brandName: editForm.brandName.trim(),
         wholesalePrice: wholesalePrice,
         retailPrice: retailPrice,
-        dealerPrice: parseFloat(editForm.dealerPrice) || null,
-        lowStockThreshold: parseFloat(editForm.lowStockThreshold) || 5,
-        attributes: editForm.attributes.filter((attribute) => attribute.key.trim() && attribute.value.trim()),
-        profitMarginPercentage: calculateProfitMargin(retailPrice, Number(editingProduct.currentUnitCost || 0)),
         updatedAt: new Date().toISOString()
       });
 
@@ -160,13 +118,8 @@ export default function Products() {
       setEditForm({
         name: '',
         unitType: UnitType.PIECE,
-        category: ProductCategory.FOOD,
-        brandName: '',
         wholesalePrice: '',
-        retailPrice: '',
-        dealerPrice: '',
-        lowStockThreshold: '5',
-        attributes: []
+        retailPrice: ''
       });
       fetchProducts();
     } catch (e) {
@@ -229,23 +182,6 @@ export default function Products() {
                   <Label htmlFor="name">Product Name</Label>
                   <Input id="name" name="name" required placeholder="e.g. Asmi Large" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Category</Label>
-                    <Select value={addForm.category} onValueChange={(value) => setAddForm((prev) => ({ ...prev, category: value as ProductCategory }))}>
-                      <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                      <SelectContent>
-                        {Object.values(ProductCategory).map((category) => (
-                          <SelectItem key={category} value={category}>{category}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="brandName">Brand Name</Label>
-                    <Input id="brandName" value={addForm.brandName} onChange={(event) => setAddForm((prev) => ({ ...prev, brandName: event.target.value }))} placeholder="Optional brand" />
-                  </div>
-                </div>
                 <div className="grid gap-2">
                   <Label htmlFor="unitType">Unit Type</Label>
                   <Select name="unitType" defaultValue="PIECE">
@@ -262,38 +198,12 @@ export default function Products() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="wholesalePrice">Wholesale Price (LKR)</Label>
-                    <Input id="wholesalePrice" name="wholesalePrice" type="number" step="0.01" value={addForm.wholesalePrice} onChange={(event) => setAddForm((prev) => ({ ...prev, wholesalePrice: event.target.value }))} required />
+                    <Input id="wholesalePrice" name="wholesalePrice" type="number" step="0.01" required />
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="retailPrice">Retail Price (LKR)</Label>
-                    <Input id="retailPrice" name="retailPrice" type="number" step="0.01" value={addForm.retailPrice} onChange={(event) => setAddForm((prev) => ({ ...prev, retailPrice: event.target.value }))} required />
+                    <Input id="retailPrice" name="retailPrice" type="number" step="0.01" required />
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="dealerPrice">Dealer Price (LKR)</Label>
-                    <Input id="dealerPrice" type="number" step="0.01" value={addForm.dealerPrice} onChange={(event) => setAddForm((prev) => ({ ...prev, dealerPrice: event.target.value }))} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="lowStockThreshold">Low Stock Threshold</Label>
-                    <Input id="lowStockThreshold" type="number" step="1" min="0" value={addForm.lowStockThreshold} onChange={(event) => setAddForm((prev) => ({ ...prev, lowStockThreshold: event.target.value }))} />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Profit Margin %</Label>
-                  <Input readOnly value={`${calculateProfitMargin(Number(addForm.retailPrice || 0), 0).toFixed(2)}%`} className="bg-slate-50" />
-                </div>
-                <div className="grid gap-3">
-                  <div className="flex items-center justify-between">
-                    <Label>Attributes</Label>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setAddAttributes((prev) => [...prev, { ...emptyAttribute }])}>Add Attribute</Button>
-                  </div>
-                  {addAttributes.map((attribute, index) => (
-                    <div key={index} className="grid grid-cols-2 gap-2">
-                      <Input placeholder="Key" value={attribute.key} onChange={(event) => setAddAttributes((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))} />
-                      <Input placeholder="Value" value={attribute.value} onChange={(event) => setAddAttributes((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
-                    </div>
-                  ))}
                 </div>
               </div>
               <DialogFooter>
@@ -326,23 +236,6 @@ export default function Products() {
                     value={editForm.name}
                     onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
                   />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Category</Label>
-                    <Select value={editForm.category} onValueChange={(value) => setEditForm((prev) => ({ ...prev, category: value as ProductCategory }))}>
-                      <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                      <SelectContent>
-                        {Object.values(ProductCategory).map((category) => (
-                          <SelectItem key={category} value={category}>{category}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-brandName">Brand Name</Label>
-                    <Input id="edit-brandName" value={editForm.brandName} onChange={(event) => setEditForm((prev) => ({ ...prev, brandName: event.target.value }))} />
-                  </div>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="edit-unitType">Unit Type</Label>
@@ -386,32 +279,6 @@ export default function Products() {
                       onChange={(event) => setEditForm((prev) => ({ ...prev, retailPrice: event.target.value }))}
                     />
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-dealerPrice">Dealer Price (LKR)</Label>
-                    <Input id="edit-dealerPrice" type="number" step="0.01" value={editForm.dealerPrice} onChange={(event) => setEditForm((prev) => ({ ...prev, dealerPrice: event.target.value }))} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-lowStockThreshold">Low Stock Threshold</Label>
-                    <Input id="edit-lowStockThreshold" type="number" step="1" min="0" value={editForm.lowStockThreshold} onChange={(event) => setEditForm((prev) => ({ ...prev, lowStockThreshold: event.target.value }))} />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Profit Margin %</Label>
-                  <Input readOnly value={`${calculateProfitMargin(Number(editForm.retailPrice || 0), Number(editingProduct?.currentUnitCost || 0)).toFixed(2)}%`} className="bg-slate-50" />
-                </div>
-                <div className="grid gap-3">
-                  <div className="flex items-center justify-between">
-                    <Label>Attributes</Label>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setEditForm((prev) => ({ ...prev, attributes: [...prev.attributes, { ...emptyAttribute }] }))}>Add Attribute</Button>
-                  </div>
-                  {editForm.attributes.map((attribute, index) => (
-                    <div key={index} className="grid grid-cols-2 gap-2">
-                      <Input placeholder="Key" value={attribute.key} onChange={(event) => setEditForm((prev) => ({ ...prev, attributes: prev.attributes.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item) }))} />
-                      <Input placeholder="Value" value={attribute.value} onChange={(event) => setEditForm((prev) => ({ ...prev, attributes: prev.attributes.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) }))} />
-                    </div>
-                  ))}
                 </div>
               </div>
               <DialogFooter>
@@ -465,25 +332,14 @@ export default function Products() {
                   </TableRow>
                 ))
               ) : filtered.map((product) => (
-                <TableRow key={product.id} className="border-slate-50 group">
+                <TableRow key={product.id} className="border-slate-50">
                   <TableCell className="font-mono font-semibold text-slate-600">{product.productCode || '-'}</TableCell>
                   <TableCell className="font-medium text-slate-900">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center">
                         <Package className="w-4 h-4 text-slate-500" />
                       </div>
-                      <div>
-                        <div>{product.name}</div>
-                        {Array.isArray(product.attributes) && product.attributes.length > 0 && (
-                          <div className="mt-1 hidden flex-wrap gap-1 group-hover:flex">
-                            {product.attributes.map((attribute: ProductAttribute, index: number) => (
-                              <Badge key={`${attribute.key}-${index}`} variant="outline" className="bg-slate-50 text-[10px] font-medium">
-                                {attribute.key}: {attribute.value}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                      {product.name}
                     </div>
                   </TableCell>
                   <TableCell>

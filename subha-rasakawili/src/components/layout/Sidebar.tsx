@@ -13,11 +13,7 @@ import {
   Warehouse,
   BookOpen,
   Settings,
-  LogOut,
-  QrCode,
-  Monitor,
-  BookMarked,
-  Undo2
+  LogOut
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { auth } from "../../lib/firebase";
@@ -26,9 +22,7 @@ import { signOut } from "firebase/auth";
 const mainNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: ShoppingCart, label: "New Sale", path: "/sales/new" },
-  { icon: Monitor, label: "POS Terminal", path: "/pos" },
   { icon: Receipt, label: "Sales History", path: "/sales" },
-  { icon: QrCode, label: "Barcodes", path: "/barcodes" },
   { icon: Package, label: "Products", path: "/products" },
   { icon: Leaf, label: "Ingredients", path: "/ingredients" },
   { icon: ClipboardList, label: "Recipes", path: "/recipes" },
@@ -38,14 +32,12 @@ const mainNavItems = [
 const expenseNavItems = [
   { icon: Receipt, label: "Expense Purchases", path: "/expenses/purchases" },
   { icon: Settings, label: "General Expenses", path: "/expenses/general" },
-  { icon: Undo2, label: "Returns", path: "/returns" },
   { icon: Building2, label: "Suppliers", path: "/suppliers" },
   { icon: Warehouse, label: "Inventory", path: "/inventory" },
 ];
 
 const accountingNavItems = [
   { icon: BookOpen, label: "Final Accounts", path: "/accounts" },
-  { icon: BookMarked, label: "Due Ledger", path: "/due-ledger" },
   { icon: BarChart3, label: "Reports", path: "/reports" },
 ];
 

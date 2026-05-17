@@ -139,17 +139,3 @@
     display: none;
   }
 }
-
-@media print {
-  .no-print {
-    display: none !important;
-  }
-
-  .print-only {
-    display: grid !important;
-  }
-
-  body {
-    background: white;
-  }
-}
