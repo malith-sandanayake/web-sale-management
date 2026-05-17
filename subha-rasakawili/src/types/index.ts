@@ -77,6 +77,7 @@ export interface Product {
   productCode: string;
   name: string;
   unitType: UnitType;
+  currentStock: number;
   wholesalePrice: number;
   retailPrice: number;
   category?: ProductCategory;
@@ -119,7 +120,7 @@ export interface Customer {
   name: string;
   customerType: CustomerType;
   phone?: string;
-  outstandingBalance?: number;
+  outstandingBalance: number;
   createdAt: string;
 }
 
@@ -129,8 +130,12 @@ export interface Receipt {
   customerId: string;
   saleDate: string;
   totalAmount: number;
+  paymentMethod: 'CASH' | 'CREDIT';
+  paymentStatus: 'PAID' | 'PENDING';
+  isReturned?: boolean;
   notes?: string;
   createdAt: string;
+  paymentType?: PaymentType;
   isReversed?: boolean;
   reversedAt?: string;
 }
@@ -204,6 +209,17 @@ export interface SupplierTransaction {
   balanceBefore: number;
   balanceAfter: number;
   notes?: string;
+  createdAt: string;
+}
+
+export interface CustomerTransaction {
+  id: string;
+  customerId: string;
+  receiptId: string;
+  type: 'CREDIT_SALE' | 'DEBT_PAYMENT' | 'SALES_RETURN';
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
   createdAt: string;
 }
 

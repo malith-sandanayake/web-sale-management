@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from './lib/firebase';
+import { auth } from './utils/firebase';
 import { Toaster } from 'sonner';
-import { seedDatabase } from './lib/seed';
-import { migrateProductCodes, migrateIngredientCodes, migrateCustomerCodes, migrateIngredientStockFields, migrateAccountingLedgers } from './lib/migrations';
+import { seedDatabase } from './utils/seed';
+import { migrateProductCodes, migrateIngredientCodes, migrateCustomerCodes, migrateIngredientStockFields, migrateAccountingLedgers } from './utils/migrations';
 
 // Layout
 import Sidebar from './components/layout/Sidebar';
@@ -23,13 +23,13 @@ import Purchases from './app/expenses/purchases/page';
 import GeneralExpenses from './app/expenses/general/page';
 import Reports from './app/reports/page';
 import Profile from './app/profile/page';
-import ProductPerformance from './app/product-performance/page';
+import ProductPerformance from './app/productPerformance/page';
 import Suppliers from './app/suppliers/page';
 import Inventory from './app/inventory/page';
 import Accounts from './app/accounts/page';
 import Barcodes from './app/barcodes/page';
 import POS from './app/pos/page';
-import DueLedger from './app/due-ledger/page';
+import DueLedger from './app/dueLedger/page';
 import Returns from './app/returns/page';
 import type { ReactNode } from 'react';
 
