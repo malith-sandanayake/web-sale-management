@@ -10,6 +10,7 @@ import { Label } from '../../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../../components/ui/table';
 import { Separator } from '../../../components/ui/separator';
+import { Badge } from '../../../components/ui/badge';
 import { formatLKR, generateReceiptNo, generateInvoiceNo } from '../../../lib/utils';
 import { toast } from 'sonner';
 import { CustomerType, PaymentType } from '../../../types';
@@ -337,16 +338,24 @@ export default function NewSale() {
               </div>
 
               <div className="grid gap-2">
-                <Label>Payment Method</Label>
+                <Label>Payment Terms</Label>
                 <Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as 'CASH' | 'CREDIT')}>
                   <SelectTrigger className="h-11 border-slate-200">
-                    <SelectValue placeholder="Select payment method" />
+                    <SelectValue placeholder="Select payment terms" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CASH">CASH</SelectItem>
-                    <SelectItem value="CREDIT">CREDIT</SelectItem>
+                    <SelectItem value="CASH">Cash</SelectItem>
+                    <SelectItem value="CREDIT">Credit</SelectItem>
                   </SelectContent>
                 </Select>
+                {paymentMethod === 'CREDIT' && (
+                  <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                    <Badge className="bg-amber-200 text-amber-900 hover:bg-amber-200">Credit</Badge>
+                    <p className="text-xs leading-5 text-amber-800">
+                      Final order total will be attached to the selected customer’s outstanding balance ledger automatically.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {selectedCustomer && (
