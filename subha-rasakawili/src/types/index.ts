@@ -83,6 +83,8 @@ export interface ProductRecipe {
   ingredientId: string;
   quantityPerUnit: number;
   notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Customer {
