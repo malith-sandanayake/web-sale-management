@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { collection, doc, getDocs, query, orderBy, runTransaction, addDoc } from 'firebase/firestore';
-import { AlertTriangle, ArrowDown, ArrowUp, History, Plus, Search, Warehouse } from 'lucide-react';
+import { Factory, History, Plus, Search, Warehouse } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
 import { formatLKR, generateNextIngredientCode } from '../../lib/utils';
-import { Ingredient, StockMovement, StockMovementType, StockReferenceType, Supplier } from '../../types';
+import { Ingredient, Product, ProductRecipe, StockMovement, StockMovementType, StockReferenceType, Supplier } from '../../types';
 import { toast } from 'sonner';
+import { productionRunSchema } from '../../lib/validations';
 
 const emptyAdjustForm = {
   quantity: '',
@@ -30,15 +31,20 @@ const emptyAddForm = {
 
 export default function Inventory() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productRecipes, setProductRecipes] = useState<ProductRecipe[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isAdjustOpen, setIsAdjustOpen] = useState(false);
+  const [isProductionOpen, setIsProductionOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedIngredient, setSelectedIngredient] = useState<Ingredient | null>(null);
   const [adjustForm, setAdjustForm] = useState(emptyAdjustForm);
+  const [productionForm, setProductionForm] = useState({ productId: '', quantityProduced: '' });
   const [isSaving, setIsSaving] = useState(false);
+  const [isProducing, setIsProducing] = useState(false);
 
     const [isAddIngredientOpen, setIsAddIngredientOpen] = useState(false);
     const [addForm, setAddForm] = useState(emptyAddForm);
@@ -52,15 +58,19 @@ export default function Inventory() {
 
   async function fetchData() {
     try {
-      const [ingredientSnap, movementSnap, supplierSnap] = await Promise.all([
+      const [ingredientSnap, movementSnap, supplierSnap, productSnap, recipeSnap] = await Promise.all([
         getDocs(query(collection(db, 'ingredients'), orderBy('createdAt', 'desc'))),
         getDocs(query(collection(db, 'stock_movements'), orderBy('createdAt', 'desc'))),
         getDocs(collection(db, 'suppliers')),
+        getDocs(query(collection(db, 'products'), orderBy('createdAt', 'desc'))),
+        getDocs(collection(db, 'product_recipes')),
       ]);
 
       setIngredients(ingredientSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Ingredient)));
       setMovements(movementSnap.docs.map((d) => ({ id: d.id, ...d.data() } as StockMovement)));
       setSuppliers(supplierSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Supplier)));
+      setProducts(productSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Product)));
+      setProductRecipes(recipeSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ProductRecipe)));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, 'inventory');
     } finally {
@@ -203,6 +213,98 @@ export default function Inventory() {
     }
   };
 
+  const handleRecordProduction = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const parsed = productionRunSchema.safeParse(productionForm);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? 'Please correct the production form');
+      return;
+    }
+
+    const product = products.find((currentProduct) => currentProduct.id === parsed.data.productId);
+    if (!product) {
+      toast.error('Select a valid product');
+      return;
+    }
+
+    const recipeRows = productRecipes.filter((row) => row.productId === parsed.data.productId);
+    if (recipeRows.length === 0) {
+      toast.error('No recipe configured for the selected product');
+      return;
+    }
+
+    setIsProducing(true);
+    try {
+      const createdAt = new Date().toISOString();
+      const productionReferenceId = `PROD-${Date.now()}`;
+      const requiredIngredients = recipeRows.map((row) => ({
+        ...row,
+        totalRequired: Number(row.quantityPerUnit || 0) * Number(parsed.data.quantityProduced),
+      }));
+
+      await runTransaction(db, async (transaction) => {
+        const ingredientSnapshots = await Promise.all(
+          requiredIngredients.map((item) => transaction.get(doc(db, 'ingredients', item.ingredientId)))
+        );
+
+        ingredientSnapshots.forEach((snapshot, index) => {
+          if (!snapshot.exists()) {
+            throw new Error('One or more ingredients could not be found');
+          }
+
+          const ingredientData = snapshot.data() as Ingredient;
+          const required = requiredIngredients[index].totalRequired;
+          const currentStock = Number(ingredientData.currentStock || 0);
+
+          if (currentStock < required) {
+            throw new Error(`Insufficient stock for ${ingredientData.name}`);
+          }
+        });
+
+        ingredientSnapshots.forEach((snapshot, index) => {
+          const ingredientData = snapshot.data() as Ingredient;
+          const required = requiredIngredients[index].totalRequired;
+          const currentStock = Number(ingredientData.currentStock || 0);
+          const newStock = currentStock - required;
+          const movementRef = doc(collection(db, 'stock_movements'));
+
+          transaction.update(snapshot.ref, {
+            currentStock: newStock,
+            updatedAt: createdAt,
+          });
+
+          transaction.set(movementRef, {
+            ingredientId: ingredientData.id,
+            movementType: StockMovementType.STOCK_OUT,
+            quantity: required,
+            unitCost: Number(ingredientData.currentUnitCost || 0),
+            totalValue: required * Number(ingredientData.currentUnitCost || 0),
+            referenceType: StockReferenceType.PRODUCTION,
+            referenceId: productionReferenceId,
+            notes: `Production run for ${product.name}`,
+            balanceAfter: newStock,
+            createdAt,
+          });
+        });
+      });
+
+      toast.success('Production recorded successfully');
+      setIsProductionOpen(false);
+      setProductionForm({ productId: '', quantityProduced: '' });
+      fetchData();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to record production';
+      if (message.startsWith('Insufficient stock') || message.includes('recipe configured')) {
+        toast.error(message);
+      } else {
+        handleFirestoreError(error, OperationType.WRITE, 'stock_movements');
+      }
+    } finally {
+      setIsProducing(false);
+    }
+  };
+
   const getStatus = (ingredient: Ingredient) => {
     const stock = Number(ingredient.currentStock || 0);
     const reorderLevel = Number(ingredient.reorderLevel || 0);
@@ -218,6 +320,46 @@ export default function Inventory() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Inventory</h1>
           <p className="text-slate-500 mt-1">Monitor stock levels and record inventory movements.</p>
         </div>
+        <Dialog open={isProductionOpen} onOpenChange={setIsProductionOpen}>
+          <DialogTrigger render={<Button className="bg-slate-900"><Factory className="w-4 h-4 mr-2" /> Record Production</Button>} />
+          <DialogContent>
+            <form onSubmit={handleRecordProduction}>
+              <DialogHeader>
+                <DialogTitle>Record Production</DialogTitle>
+                <DialogDescription>Deduct raw ingredients and log stock movements for a finished product run.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label>Product</Label>
+                  <Select value={productionForm.productId} onValueChange={(value) => setProductionForm((prev) => ({ ...prev, productId: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
+                    <SelectContent>
+                      {products.filter((product) => product.isActive).map((product) => (
+                        <SelectItem key={product.id} value={product.id}>{product.productCode} - {product.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="quantity-produced">Quantity Produced</Label>
+                  <Input
+                    id="quantity-produced"
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    value={productionForm.quantityProduced}
+                    onChange={(event) => setProductionForm((prev) => ({ ...prev, quantityProduced: event.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsProductionOpen(false)}>Cancel</Button>
+                <Button type="submit" className="bg-slate-900" disabled={isProducing}>{isProducing ? 'Recording...' : 'Record Production'}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
          <Dialog open={isAddIngredientOpen} onOpenChange={(open) => { setIsAddIngredientOpen(open); if (!open) { setAddIngredientSource('IN_HOUSE'); setAddIngredientSupplierId(''); } }}>
            <DialogTrigger render={<Button className="bg-slate-900"><Plus className="w-4 h-4 mr-2" /> Add Ingredient</Button>} />
            <DialogContent>
