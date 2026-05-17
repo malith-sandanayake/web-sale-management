@@ -9,9 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from '../../components/ui/badge';
 import { formatLKR } from '../../lib/utils';
 import { Link } from 'react-router-dom';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
-import { Label } from '../../components/ui/label';
-import { StockMovementType, StockReferenceType, ReturnType } from '../../types';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog';
+import { PaymentType } from '../../types';
 import { toast } from 'sonner';
 import { exportToCSV, exportToExcel, printTable } from '../../lib/exportUtils';
 
@@ -21,9 +20,8 @@ export default function SalesList() {
   const [search, setSearch] = useState("");
   const [selectedSale, setSelectedSale] = useState<any>(null);
   const [saleItems, setSaleItems] = useState<any[]>([]);
-  const [returnSale, setReturnSale] = useState<any>(null);
-  const [returnItems, setReturnItems] = useState<any[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
+  const [returningSaleId, setReturningSaleId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchSaleItems() {
@@ -97,85 +95,111 @@ export default function SalesList() {
     }
   };
 
-  const openReturnDialog = async (sale: any) => {
-    setReturnSale(sale);
-    setItemsLoading(true);
-    try {
-      const q = query(collection(db, 'receipt_items'), where('receiptId', '==', sale.id));
-      const snap = await getDocs(q);
-      const itemsData = await Promise.all(snap.docs.map(async (d) => {
-        const data = d.data();
-        const productSnap = await getDoc(doc(db, 'products', data.productId));
-        return {
-          id: d.id,
-          ...data,
-          productName: productSnap.exists() ? productSnap.data().name : 'Unknown Product',
-          returnQuantity: data.quantity,
-        };
-      }));
-      setReturnItems(itemsData);
-    } catch (e) {
-      handleFirestoreError(e, OperationType.LIST, 'receipt_items');
-    } finally {
-      setItemsLoading(false);
+  const processSaleReturn = async (sale: any) => {
+    if (sale.isReturned) {
+      return toast.error('This receipt has already been returned');
     }
-  };
 
-  const processSaleReturn = async () => {
-    if (!returnSale) return;
-    const itemsToReturn = returnItems
-      .map((item) => ({ ...item, returnQuantity: Number(item.returnQuantity || 0) }))
-      .filter((item) => item.returnQuantity > 0);
-    if (itemsToReturn.length === 0) return toast.error('Enter at least one return quantity');
+    const confirmed = window.confirm(
+      `Process return for ${sale.receiptNumber}? This will restore stock quantities and reverse the receipt balance if it was a credit sale.`
+    );
+    if (!confirmed) return;
 
+    setReturningSaleId(sale.id);
     const createdAt = new Date().toISOString();
+
     try {
+      const itemSnap = await getDocs(query(collection(db, 'receipt_items'), where('receiptId', '==', sale.id)));
+      const itemRows = itemSnap.docs.map((itemDoc) => ({ id: itemDoc.id, ...itemDoc.data() }));
+
+      const paymentSnap = !sale.paymentMethod
+        ? await getDocs(query(collection(db, 'payments'), where('receiptId', '==', sale.id)))
+        : null;
+      const paymentData = paymentSnap?.docs[0]?.data();
+      const originalPaymentMethod = sale.paymentMethod || sale.paymentType || paymentData?.paymentType || (sale.paymentStatus === 'PENDING' ? PaymentType.CREDIT : PaymentType.CASH);
+      const totalAmount = Number(sale.totalAmount || 0);
+
       await runTransaction(db, async (transaction) => {
-        const returnId = doc(collection(db, 'returns')).id;
-        const totalAmount = itemsToReturn.reduce((sum, item) => sum + item.returnQuantity * Number(item.unitPrice || 0), 0);
+        const receiptRef = doc(db, 'receipts', sale.id);
+        const receiptSnapshot = await transaction.get(receiptRef);
 
-        transaction.set(doc(db, 'returns', returnId), {
-          returnType: ReturnType.SALE_RETURN,
-          originalReceiptId: returnSale.id,
-          partyId: returnSale.customerId,
-          items: itemsToReturn.map((item) => ({
-            productId: item.productId,
-            quantity: item.returnQuantity,
-            unitPrice: item.unitPrice,
-            subtotal: item.returnQuantity * Number(item.unitPrice || 0),
-          })),
-          totalAmount,
-          createdAt,
-        });
+        if (!receiptSnapshot.exists()) {
+          throw new Error('Receipt not found');
+        }
 
-        itemsToReturn.forEach((item) => {
-          const movementId = doc(collection(db, 'stock_movements')).id;
-          transaction.set(doc(db, 'stock_movements', movementId), {
-            productId: item.productId,
-            movementType: StockMovementType.STOCK_IN,
-            quantity: item.returnQuantity,
-            unitCost: item.unitPrice,
-            totalValue: item.returnQuantity * Number(item.unitPrice || 0),
-            referenceType: StockReferenceType.RETURN,
-            referenceId: returnId,
-            notes: `Return for ${returnSale.receiptNumber}`,
-            balanceAfter: null,
-            createdAt,
+        if (receiptSnapshot.data().isReturned) {
+          throw new Error('This receipt has already been returned');
+        }
+
+        let balanceBefore = 0;
+        let balanceAfter = 0;
+
+        for (const item of itemRows) {
+          const itemRef = doc(db, 'receipt_items', item.id);
+          const itemSnapshot = await transaction.get(itemRef);
+          if (!itemSnapshot.exists()) {
+            throw new Error('A receipt item was missing during return processing');
+          }
+
+          const itemData = itemSnapshot.data();
+          const productRef = doc(db, 'products', itemData.productId);
+          const productSnapshot = await transaction.get(productRef);
+
+          if (!productSnapshot.exists()) {
+            throw new Error(`Product not found for receipt item ${itemData.productId}`);
+          }
+
+          const productData = productSnapshot.data();
+          const currentStock = Number(productData.currentStock || 0);
+          const quantity = Number(itemData.quantity || 0);
+
+          transaction.update(productRef, {
+            currentStock: currentStock + quantity,
+            updatedAt: createdAt,
           });
-        });
+        }
 
-        transaction.update(doc(db, 'receipts', returnSale.id), {
-          hasReturn: true,
+        transaction.update(receiptRef, {
+          isReturned: true,
           returnedAt: createdAt,
         });
+
+        if (originalPaymentMethod === PaymentType.CREDIT || originalPaymentMethod === 'CREDIT') {
+          const customerRef = doc(db, 'customers', sale.customerId);
+          const customerSnapshot = await transaction.get(customerRef);
+
+          if (!customerSnapshot.exists()) {
+            throw new Error('Customer record not found for return processing');
+          }
+
+          balanceBefore = Number(customerSnapshot.data().outstandingBalance || 0);
+          balanceAfter = Math.max(0, balanceBefore - totalAmount);
+
+          transaction.update(customerRef, {
+            outstandingBalance: balanceAfter,
+            updatedAt: createdAt,
+          });
+
+          const customerTransactionId = doc(collection(db, 'customer_transactions')).id;
+          transaction.set(doc(db, 'customer_transactions', customerTransactionId), {
+            customerId: sale.customerId,
+            receiptId: sale.id,
+            type: 'SALES_RETURN',
+            amount: totalAmount,
+            balanceBefore,
+            balanceAfter,
+            createdAt,
+          });
+        }
       });
 
-      toast.success('Sale return processed');
-      setReturnSale(null);
-      setReturnItems([]);
+      toast.success('Warehouse stock update loop has completed successfully');
       fetchSales();
     } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, 'returns');
+      const message = e instanceof Error ? e.message : 'Failed to process sales return';
+      toast.error(message);
+    } finally {
+      setReturningSaleId(null);
     }
   };
 
@@ -190,7 +214,7 @@ export default function SalesList() {
     customer: sale.customerName,
     type: sale.customerType,
     totalAmount: sale.totalAmount,
-    status: sale.isReversed ? 'Reversed' : sale.hasReturn ? 'Returned' : 'Active',
+    status: sale.isReversed ? 'Reversed' : sale.isReturned ? 'Returned' : 'Active',
   }));
 
   return (
@@ -273,9 +297,17 @@ export default function SalesList() {
                       </Button>
                       {!sale.isReversed ? (
                         <>
-                          {!sale.hasReturn && (
-                            <Button variant="ghost" size="icon" onClick={() => openReturnDialog(sale)} title="Process return">
-                              <Undo2 className="w-4 h-4 text-amber-600" />
+                          {!sale.isReturned && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                              onClick={() => processSaleReturn(sale)}
+                              disabled={returningSaleId === sale.id}
+                              title="Process Return"
+                            >
+                              <Undo2 className="w-4 h-4 mr-2" />
+                              {returningSaleId === sale.id ? 'Processing...' : 'Process Return'}
                             </Button>
                           )}
                           <Button variant="ghost" size="icon" onClick={() => reverseSale(sale.id)}>
@@ -328,7 +360,7 @@ export default function SalesList() {
                   <Table>
                     <TableHeader className="bg-slate-50/50">
                       <TableRow className="border-slate-100 hover:bg-transparent">
-                        <TableHead className="w-[100px] font-semibold text-slate-600">Code</TableHead>
+                        <TableHead className="w-25 font-semibold text-slate-600">Code</TableHead>
                         <TableHead className="font-semibold text-slate-600">Item Name</TableHead>
                         <TableHead className="text-right font-semibold text-slate-600">Qty</TableHead>
                         <TableHead className="text-right font-semibold text-slate-600">Unit Price</TableHead>
@@ -380,33 +412,6 @@ export default function SalesList() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!returnSale} onOpenChange={(open) => !open && setReturnSale(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Process Sale Return</DialogTitle>
-            <DialogDescription>{returnSale ? `Return items from ${returnSale.receiptNumber}.` : 'Return sale items.'}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {itemsLoading ? (
-              <div className="h-24 animate-pulse rounded bg-slate-100" />
-            ) : (
-              returnItems.map((item, index) => (
-                <div key={item.id} className="grid grid-cols-[1fr_140px] items-end gap-3">
-                  <div>
-                    <Label>{item.productName}</Label>
-                    <p className="text-xs text-slate-500">Original quantity: {item.quantity}</p>
-                  </div>
-                  <Input type="number" min="0" max={item.quantity} step="0.01" value={item.returnQuantity} onChange={(event) => setReturnItems((prev) => prev.map((row, rowIndex) => rowIndex === index ? { ...row, returnQuantity: event.target.value } : row))} />
-                </div>
-              ))
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReturnSale(null)}>Cancel</Button>
-            <Button className="bg-slate-900" onClick={processSaleReturn}>Confirm Return</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
